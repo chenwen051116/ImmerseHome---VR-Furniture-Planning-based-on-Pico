@@ -1,0 +1,30 @@
+plugins {
+    id 'com.android.library'
+    id 'org.jetbrains.kotlin.android'
+    id 'com.pico.spatial.tools' version '0.13.1'
+}
+android {
+    namespace 'com.example.testfull.editorAsset'
+    compileSdk 35
+
+    defaultConfig {
+        minSdkVersion 35
+        targetSdkVersion 35
+
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+    }
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+}
+dependencies {
+    implementation(libs.androidx.core.ktx)
+    implementation(platform(libs.bom))
+    implementation(libs.core)
+    implementation(libs.foundation)
+}
+
+spatial {
+    name = "editor-asset"
+    spatialToolsVersion = 0.13
+}

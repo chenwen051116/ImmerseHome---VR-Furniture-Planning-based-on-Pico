@@ -1,0 +1,13 @@
+
+#project cache data
+.CacheData
+
+#project library
+.Library
+
+#user settings
+UserSettings/EditorSceneSettings.yaml
+UserSettings/EditorUserSettings.yaml
+UserSettings/EditorViewportSettings.yaml
+UserSettings/history.json
+

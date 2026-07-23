@@ -1,0 +1,10 @@
+<resources>
+    <array name="icon_sdf_list">
+        <item>@drawable/icon_3d_sdf_1</item>
+        <item>@drawable/icon_3d_sdf_0</item>
+    </array>
+    <array name="icon_3d_list">
+        <item>@drawable/icon_3d_layer_1</item>
+        <item>@drawable/icon_3d_layer_0</item>
+    </array>
+</resources>

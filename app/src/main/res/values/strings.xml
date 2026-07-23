@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">FullStage</string>
+    <string name="homepage_title">Full Stage</string>
+    <string name="homepage_body">The Stage is a large-scale spatial environment for immersive 3D scenes or room-scale models. It is ideal for: full 3D presentations and storytelling, environments requiring spatial tracking and environmental awareness, expansive or cinematic visual experiences.</string>
+</resources>

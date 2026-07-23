@@ -1,0 +1,142 @@
+#usda 1.0
+(
+    customLayerData = {
+        string Copyright = "Copyright 2022 - 2024 PICO. All rights reserved."
+        string RuntimeVersion = "Runtime V0.10.3.0.alpha.7"
+        string Version = "Spatial Editor V0.10.2-alpha.3"
+    }
+    defaultPrim = "Root"
+    doc = "spatial editor 0.1"
+    endTimeCode = 0
+    framesPerSecond = 24
+    metersPerUnit = 1
+    startTimeCode = 0
+    upAxis = "Y"
+)
+
+def Xform "Root"
+{
+    quatf xformOp:orient = (1, 0, 0, 0) (
+        customData = {
+            float3 euler = (0, 0, 0)
+        }
+    )
+    float3 xformOp:scale = (1, 1, 1)
+    float3 xformOp:translate = (0, 0, 0)
+    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+    def Xform "SpotLight"
+    {
+        token visibility = "inherited"
+        quatf xformOp:orient = (0.7071068, -0.7071067, 0, 0) (
+            customData = {
+                float3 euler = (-90, 0, 0)
+            }
+        )
+        float3 xformOp:scale = (1, 1, 1)
+        float3 xformOp:translate = (0, 3, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+        def SpatialComponent "SpotLightComponent"
+        {
+            uniform token info:id = "SpotLightComponent"
+            uint64 info:typeId = 2546492886525202599
+        }
+    }
+
+    def Xform "IBL"
+    {
+        token visibility = "inherited"
+        quatf xformOp:orient = (0.89299095, -0.41944683, 0.14327785, -0.078121655) (
+            customData = {
+                float3 euler = (-46.613678, 27.899996, -22.215746)
+            }
+        )
+        float3 xformOp:scale = (0.9999998, 0.99999994, 0.99999994)
+        float3 xformOp:translate = (0.21276706, 0.47131893, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+        def SpatialComponent "StageEnvironmentLightingComponent"
+        {
+            uniform token info:id = "StageEnvironmentLightingComponent"
+            uint64 info:typeId = 8323998322427533274
+            token mMode = "SINGLE"
+
+            def SpatialStruct "mIblTextureOne"
+            {
+                bool generateMipmap = 1
+                uint64 info:typeId = 7057009229666234536
+                token maxSize = "MAXSIZE_256"
+                token mipmapMode = "ENV_LIGHTING"
+                token sourceColorSpace = "SRGB_REC709"
+                token targetColorSpace = "SRGB_DISPLAY_P3"
+                token textureFormat = "R11F_G11F_B10F"
+                asset texturePath = @../Assets/museum_day_ibl.exr@
+                token textureShape = "TEXTURE_CUBEMAP"
+                token textureType = "DEFAULT"
+            }
+        }
+    }
+
+    def "box" (
+        prepend references = @../Assets/box.usdz@
+    )
+    {
+        quatf xformOp:orient = (0.7071068, 0.7071067, 0, 0) (
+            customData = {
+                float3 euler = (90, 0, 0)
+            }
+        )
+        float3 xformOp:scale = (1.2, 1.2, 1.2)
+        float3 xformOp:translate = (0, 0, 0)
+    }
+
+    def "Sky_Sphere" (
+        prepend references = @../Assets/Sky Sphere.usdz@
+    )
+    {
+        quatf xformOp:orient = (0.7071069, -0.70710665, 0, 0)
+        float3 xformOp:scale = (1, 0.9999998, 0.9999998)
+        float3 xformOp:translate = (0, 0, 0)
+
+        over "_materials"
+        {
+            over "Sky_Sphere_m"
+            {
+                over "Principled_BSDF"
+                {
+                    color3f inputs:diffuseColor = (1.0000021, 1, 0.99999774) (
+                        colorSpace = "lin_srgb"
+                    )
+                    color3f inputs:diffuseColor.connect = </Root/Sky_Sphere/_materials/Sky_Sphere_m/____________.outputs:rgb>
+                    float inputs:diffuseOpacity = 1
+                    bool inputs:toneMapping = 0
+                }
+
+                over "____________"
+                {
+                    float4 inputs:fallback = (0.5, 0.5, 0.5, 1)
+                    asset inputs:file = @../Assets/skybox.png@
+                    custom float spatial:AnisotropyLevel = 1
+                    custom int spatial:Col = 1
+                    custom float spatial:CompressionQuality = 60
+                    custom token spatial:CubeMapMode = "Auto"
+                    custom bool spatial:GenerateMipmap = 1
+                    custom token spatial:MaxSize = "MaxSize_4096"
+                    custom token spatial:MipmapFilter = "Mitchell"
+                    custom token spatial:MipmapMode = "Default"
+                    custom token spatial:ResizeFilter = "Mitchell"
+                    custom int spatial:Row = 1
+                    custom token spatial:SourceColorSpace = "srgb_texture"
+                    custom token spatial:TargetColorSpace = "srgb_displayp3"
+                    custom token spatial:TextureFilterMode = "LINEAR_MIPMAP_NEAREST"
+                    custom token spatial:TextureFormat = "RGBA_ASTC_6x6"
+                    custom token spatial:TextureShape = "Texture2D"
+                    custom token spatial:TextureType = "Default"
+                    custom bool spatial:YFlip = 0
+                }
+            }
+        }
+    }
+}
+

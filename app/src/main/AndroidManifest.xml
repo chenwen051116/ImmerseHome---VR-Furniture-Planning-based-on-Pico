@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application
+        android:name=".platform.SpatialApplication"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_spatial_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_spatial_launcher"
+        android:localeConfig="@xml/locales_config"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.SpatialApp"
+        tools:targetApi="31">
+
+        <activity
+            android:name=".platform.LaunchActivity"
+            android:exported="true"
+            android:theme="@style/Theme.SpatialApp">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- DefaultStage Configuration -->
+
+            <!-- The unique name/id of the Stage -->
+            <meta-data
+                android:name="pico.spatial.stage.id"
+                android:value="YourStage" />
+
+            <!-- Stage style at launch
+                 "0": StageStyle.Automatic, a system default setting, set to Mixed currently (default)
+                 "1": StageStyle.Mixed — displays both virtual content and the real environment at full intensity (100% each)
+                 "2": StageStyle.Progressive — allows adjusting the balance between virtual and real environments (0–100%)
+                    At 0: immersion = 0,full real environment, no virtual content
+                    At 100: immersion = 100,full virtual content, no real environment
+                 "3": StageStyle.Full — displays only virtual content (100%)
+             -->
+            <meta-data
+                android:name="pico.spatial.stage.style"
+                android:value="3" />
+
+            <!-- The immersion of a Progressive Stage at launch, only works when stage style is Progressive, range [0, 100], default value is 50 -->
+            <meta-data
+                android:name="pico.spatial.stage.immersion"
+                android:value="100" />
+
+            <!-- The minimum immersion of a Progressive Stage that the user can adjust to, only works when stage style is Progressive, range [0, 100], default value is 0 -->
+            <meta-data
+                android:name="pico.spatial.stage.immersion_min"
+                android:value="100" />
+
+            <!-- The maximum immersion of a Progressive Stage that the user can adjust to, only works when stage style is Progressive, range [0, 100], default value is 100 -->
+            <meta-data
+                android:name="pico.spatial.stage.immersion_max"
+                android:value="100" />
+
+        </activity>
+
+        <meta-data
+            android:name="icon.3d.list"
+            android:resource="@array/icon_3d_list" />
+        <meta-data
+            android:name="icon.sdf.list"
+            android:resource="@array/icon_sdf_list" />
+    </application>
+
+</manifest>
