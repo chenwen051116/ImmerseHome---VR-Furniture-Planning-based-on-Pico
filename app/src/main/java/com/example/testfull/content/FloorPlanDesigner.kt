@@ -45,6 +45,7 @@ import com.pico.spatial.ui.design.NumberField
 import com.pico.spatial.ui.design.NumberFieldDefaults
 import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.design.Text
+import com.pico.spatial.ui.design.TextField
 import com.pico.spatial.ui.design.ToggleButton
 import com.pico.spatial.ui.design.ToggleButtonDefaults
 import com.pico.spatial.ui.foundation.material.backgroundMaterial
@@ -125,6 +126,11 @@ internal fun FloorPlanExperiencePanel(
     onClearPlaced: () -> Unit,
     aimStatus: String,
     onDropNow: () -> Unit,
+    aiPrompt: String,
+    aiBusy: Boolean,
+    aiStatus: String,
+    onAiPromptChange: (String) -> Unit,
+    onArrangeWithAi: () -> Unit,
 ) {
     if (!expanded) {
         CompactEnvironmentPanel(
@@ -172,6 +178,11 @@ internal fun FloorPlanExperiencePanel(
         onClearPlaced = onClearPlaced,
         aimStatus = aimStatus,
         onDropNow = onDropNow,
+        aiPrompt = aiPrompt,
+        aiBusy = aiBusy,
+        aiStatus = aiStatus,
+        onAiPromptChange = onAiPromptChange,
+        onArrangeWithAi = onArrangeWithAi,
     )
 }
 
@@ -280,7 +291,7 @@ private fun CompactEnvironmentPanel(
         if (placementActive && selectedModelName != null) {
             Text(
                 text =
-                    "Placing \"$selectedModelName\" ($placedCount dropped) — aim with the controller, click the trigger to drop. Red preview = overlaps placed furniture.",
+                    "Placing \"$selectedModelName\" ($placedCount dropped) — aim with the controller, click the trigger to drop. The ghost slides aside to avoid overlaps; red = no free space.",
                 style = PicoTheme.typography.titleMedium,
                 fontSize = 13.sp,
                 color = Color(0x99000000),
@@ -321,6 +332,11 @@ private fun FloorPlanDesigner(
     onClearPlaced: () -> Unit,
     aimStatus: String,
     onDropNow: () -> Unit,
+    aiPrompt: String,
+    aiBusy: Boolean,
+    aiStatus: String,
+    onAiPromptChange: (String) -> Unit,
+    onArrangeWithAi: () -> Unit,
 ) {
     var mode by remember { mutableStateOf(DesignerMode.SELECT) }
     var selection by remember { mutableStateOf<PlanSelection?>(null) }
@@ -569,6 +585,11 @@ private fun FloorPlanDesigner(
                 onClearPlaced = onClearPlaced,
                 aimStatus = aimStatus,
                 onDropNow = onDropNow,
+                aiPrompt = aiPrompt,
+                aiBusy = aiBusy,
+                aiStatus = aiStatus,
+                onAiPromptChange = onAiPromptChange,
+                onArrangeWithAi = onArrangeWithAi,
             )
         }
     }
@@ -891,6 +912,11 @@ private fun Inspector(
     onClearPlaced: () -> Unit,
     aimStatus: String,
     onDropNow: () -> Unit,
+    aiPrompt: String,
+    aiBusy: Boolean,
+    aiStatus: String,
+    onAiPromptChange: (String) -> Unit,
+    onArrangeWithAi: () -> Unit,
 ) {
     val wall =
         if (selection?.kind == SelectionKind.WALL) {
@@ -1270,6 +1296,70 @@ private fun Inspector(
             ) {
                 Text("Clear placed ($placedCount)")
             }
+        }
+
+        Spacer(Modifier.height(14.dp))
+        Text(
+            text = "AI Arrange",
+            style = PicoTheme.typography.displaySmall,
+            fontSize = 21.sp,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text =
+                "Describe the layout — the AI picks library models and places them with " +
+                    "physics, replacing the furniture currently in the room.",
+            style = PicoTheme.typography.titleMedium,
+            fontSize = 13.sp,
+            color = Color(0x99000000),
+        )
+        Spacer(Modifier.height(8.dp))
+        TextField(
+            value = aiPrompt,
+            onValueChange = onAiPromptChange,
+            placeholder = {
+                Text(
+                    "e.g. cozy living room for movie night",
+                    fontSize = 13.sp,
+                )
+            },
+            singleLine = false,
+            minLines = 2,
+            enabled = roomAvailable && !aiBusy,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = { onAiPromptChange("Cozy living room for movie night") },
+                size = ButtonDefaults.Small,
+            ) {
+                Text("Cozy")
+            }
+            Button(
+                onClick = { onAiPromptChange("Dining setup for two") },
+                size = ButtonDefaults.Small,
+            ) {
+                Text("Dining")
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Button(
+            onClick = onArrangeWithAi,
+            enabled = roomAvailable && !aiBusy && aiPrompt.isNotBlank(),
+            size = ButtonDefaults.Max,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (aiBusy) "AI arranging…" else "Arrange with AI")
+        }
+        if (aiStatus.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = aiStatus,
+                style = PicoTheme.typography.titleMedium,
+                fontSize = 12.sp,
+                color = Color(0x99000000),
+            )
         }
     }
 }

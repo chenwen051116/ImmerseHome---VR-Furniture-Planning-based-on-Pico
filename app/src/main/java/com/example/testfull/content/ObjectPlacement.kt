@@ -24,6 +24,7 @@ import java.io.File
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.sin
 import kotlinx.coroutines.Dispatchers
@@ -50,12 +51,6 @@ private const val DROP_SPAWN_LIFT_METERS = 0.08f
 
 /** Fallback half-extent used when the selected model's mesh cannot be inspected. */
 private const val FALLBACK_HALF_SIZE_METERS = 0.15f
-
-/**
- * Shrink applied to both boxes in the ghost-overlap test so surfaces merely resting on each
- * other (the solver's contact skin) do not count as overlapping.
- */
-private const val OVERLAP_TOLERANCE_METERS = 0.01f
 
 private val GHOST_FREE_COLOR = Color4(0.35f, 0.85f, 0.65f, 0.45f)
 private val GHOST_BLOCKED_COLOR = Color4(0.95f, 0.3f, 0.22f, 0.5f)
@@ -185,6 +180,14 @@ private fun groundAxes(yawDegrees: Float): FloatArray {
     return floatArrayOf(cos, -sin, sin, cos)
 }
 
+/** A currently placed object as reported to the AI (navigation-root-local space). */
+internal data class PlacedSummary(
+    val modelName: String,
+    val x: Float,
+    val z: Float,
+    val yawDegrees: Float,
+)
+
 /**
  * Drives the "aim → ghost preview → click to drop" flow for placing local 3D models into the
  * generated room.
@@ -210,7 +213,7 @@ internal class PlacementController {
     val hasAimTarget: Boolean
         get() = ghost?.enabled == true
 
-    /** True when the ghost preview overlaps an already-placed object; dropping is blocked. */
+    /** True when no overlap-free spot exists near the aim; dropping is blocked. */
     var isGhostBlocked: Boolean = false
         private set
 
@@ -242,6 +245,8 @@ internal class PlacementController {
     /** A placed object plus the data needed to overlap-test the ghost against it. */
     private class PlacedObject(
         val entity: Entity,
+        /** Display name of the placed model (reported back to the AI prompt). */
+        val modelName: String,
         /** Unscaled bounding-box center of its model. */
         val center: Vector3,
         /** Unscaled bounding-box half-extents of its model. */
@@ -320,8 +325,14 @@ internal class PlacementController {
                     .getOrNull()
             }
         Log.d(TAG, "reloadSelection: mesh=${mesh != null} valid=${mesh?.valid}")
-        val bounds = mesh?.let { runCatching { it.getBoundingBox() }.getOrNull() }
-        Log.d(TAG, "reloadSelection: bounds=${bounds?.size} minY=${bounds?.min?.y}")
+        // Bounds come from the loaded ghost entity's visual bounds: the standalone MeshResource
+        // loader does not support GLB (FORMAT_UNSUPPORTED), which silently produced
+        // fallback-size colliders and previews.
+        val bounds =
+            runCatching { ghostEntity.getVisualBounds(relativeTo = ghostEntity, recursive = true) }
+                .getOrNull()
+                ?.takeUnless { it.isEmpty() }
+        Log.w(TAG, "reloadSelection: bounds=${bounds?.size} minY=${bounds?.min?.y}")
 
         releaseSelectionResources()
         val previewMaterial = createGhostMaterial()
@@ -352,8 +363,9 @@ internal class PlacementController {
      * user. The ghost is placed where a dropped object will come to rest: ray-cast from the aim
      * pose to find the anchor, then ray-cast straight down from above the anchor to find the
      * supporting surface (floor, or a previously dropped object), and lift by the pivot offset.
-     * If the ghost's bounding box interpenetrates an already-placed object, the ghost is tinted
-     * red and [drop] refuses to place until the aim moves to a free spot.
+     * If the aimed spot overlaps an already-placed object on the ground plane, the ghost slides
+     * to the nearest spot where the bounding boxes no longer intersect (see separateFromBoxes);
+     * only when no free space exists nearby is the ghost tinted red and [drop] blocked.
      */
     fun updateAim(originScene: Vector3, rotationScene: Quat, userPositionScene: Vector3?) {
         val scene = this.scene ?: return hideGhost()
@@ -418,9 +430,39 @@ internal class PlacementController {
                 bottomOffset,
                 scale,
             )
-        val restLocal = navigationLocalPoint(restScene, navOffset)
+        var restLocal = navigationLocalPoint(restScene, navOffset)
         val yaw =
             userPositionScene?.let { yawFacingUserDegrees(restScene, it) } ?: 0f
+
+        // If the aimed spot overlaps placed furniture on the ground plane, slide the ghost to
+        // the nearest free spot (its bounding box must not intersect any placed one). Only
+        // when no free space exists nearby does the ghost stay red and dropping get blocked.
+        val others = placedBoxes()
+        if (others.isNotEmpty()) {
+            val halfDiagonal =
+                hypot(modelHalfExtents.x.toDouble(), modelHalfExtents.z.toDouble()).toFloat() *
+                    scale
+            val separated =
+                separateFromBoxes(
+                    point = PlanPoint(restLocal.x, restLocal.z),
+                    pivotY = restLocal.y,
+                    yawDegrees = yaw,
+                    scale = scale,
+                    center = modelCenter,
+                    halfExtents = modelHalfExtents,
+                    others = others,
+                    walls = footprintWalls,
+                    margin = footprintMargin + halfDiagonal,
+                )
+            if (separated == null) {
+                setGhostBlocked(true)
+            } else {
+                restLocal = Vector3(separated.x, restLocal.y, separated.z)
+                setGhostBlocked(false)
+            }
+        } else {
+            setGhostBlocked(false)
+        }
 
         ghostEntity.components[TransformComponent::class.java]?.apply {
             setPosition(restLocal)
@@ -428,29 +470,23 @@ internal class PlacementController {
             setEulerAngles(EulerAngles(yaw = yaw))
         }
         ghostEntity.enabled = true
-        setGhostBlocked(overlapsPlaced(restLocal, yaw))
     }
 
-    /** True when the ghost box at [positionLocal]/[yawDegrees] interpenetrates a placed object. */
-    private fun overlapsPlaced(positionLocal: Vector3, yawDegrees: Float): Boolean {
-        if (placedObjects.isEmpty()) return false
-        val ghostBox = yawBoxFor(positionLocal, yawDegrees, scale, modelCenter, modelHalfExtents)
-        return placedObjects.any { placed ->
+    /** Current ground-plane boxes of all placed objects (re-read each frame; they settle). */
+    private fun placedBoxes(): List<YawBox> =
+        placedObjects.mapNotNull { placed ->
             val transform =
-                placed.entity.components[TransformComponent::class.java] ?: return@any false
-            val placedBox =
-                yawBoxFor(
-                    transform.position,
-                    yawOfQuaternionDegrees(transform.quaternion),
-                    placed.scale,
-                    placed.center,
-                    placed.halfExtents,
-                )
-            yawBoxesOverlap(ghostBox, placedBox, OVERLAP_TOLERANCE_METERS)
+                placed.entity.components[TransformComponent::class.java] ?: return@mapNotNull null
+            yawBoxFor(
+                transform.position,
+                yawOfQuaternionDegrees(transform.quaternion),
+                placed.scale,
+                placed.center,
+                placed.halfExtents,
+            )
         }
-    }
 
-    /** Updates the blocked flag and retints the ghost (green = free, red = overlapping). */
+    /** Updates the blocked flag and retints the ghost (green = free, red = no free space). */
     private fun setGhostBlocked(blocked: Boolean) {
         isGhostBlocked = blocked
         if (blocked == ghostTintBlocked) return
@@ -466,32 +502,106 @@ internal class PlacementController {
 
     /**
      * Drops a fresh copy of the selected model at the ghost's pose as a fully dynamic rigid body.
-     * The model file is loaded again off the main thread (a loaded entity tree cannot be
-     * parented twice), and the collision shape/material are created fresh for each drop.
      * Returns true if the object was placed.
      */
     suspend fun drop(): Boolean {
         val file = modelFile ?: return false
-        val navRoot = navigationRoot ?: return false
         val ghostEntity = ghost ?: return false
         if (!ghostEntity.enabled || dropInFlight || isGhostBlocked) return false
         val ghostTransform = ghostEntity.components[TransformComponent::class.java]
         val position = ghostTransform?.position ?: return false
         val rotation = ghostTransform?.quaternion
         val scaleVector = ghostTransform?.scaleVector ?: Vector3(scale, scale, scale)
+        return spawnPlaced(
+            file = file,
+            displayName = selectedModelName ?: file.nameWithoutExtension,
+            positionLocal = position,
+            scaleVector = scaleVector,
+            center = modelCenter,
+            halfExtents = modelHalfExtents,
+            rotation = rotation,
+            yawDegrees = null,
+            allowConvexFallback = true,
+        )
+    }
 
+    /**
+     * Spawns [model] at an AI-chosen pose: pivot at (x, bottomOffset·scale, z) — resting on the
+     * floor — yawed by [yawDegrees]. Uses the catalog's measured bounds for the collider, so the
+     * model does not need to be the current ghost selection. Returns true if it was placed.
+     */
+    suspend fun placeFromAi(
+        model: CatalogModel,
+        x: Float,
+        z: Float,
+        yawDegrees: Float,
+        scale: Float,
+    ): Boolean {
+        if (navigationRoot == null) return false
+        val position = Vector3(x, model.bottomOffset * scale, z)
+        return spawnPlaced(
+            file = model.file,
+            displayName = model.displayName,
+            positionLocal = position,
+            scaleVector = Vector3(scale, scale, scale),
+            center = model.center,
+            halfExtents = model.halfExtents,
+            rotation = null,
+            yawDegrees = yawDegrees,
+            allowConvexFallback = false,
+        )
+    }
+
+    /** Snapshot of the placed furniture, for the AI prompt. */
+    fun placedSummaries(): List<PlacedSummary> =
+        placedObjects.mapNotNull { placed ->
+            val transform =
+                placed.entity.components[TransformComponent::class.java] ?: return@mapNotNull null
+            PlacedSummary(
+                modelName = placed.modelName,
+                x = transform.position.x,
+                z = transform.position.z,
+                yawDegrees = yawOfQuaternionDegrees(transform.quaternion),
+            )
+        }
+
+    /**
+     * Shared spawn core of [drop] and [placeFromAi]. The model file is loaded again off the main
+     * thread (a loaded entity tree cannot be parented twice), and the collision shape/material
+     * are created fresh for each spawn (shared handles get invalidated, see placedShapes). The
+     * body spawns [DROP_SPAWN_LIFT_METERS] above the rest pose so physics settles it gently.
+     * Exactly one of [rotation] / [yawDegrees] is applied. [allowConvexFallback] permits the
+     * current selection's convex mesh as a fallback shape — only meaningful for [drop].
+     */
+    private suspend fun spawnPlaced(
+        file: File,
+        displayName: String,
+        positionLocal: Vector3,
+        scaleVector: Vector3,
+        center: Vector3,
+        halfExtents: Vector3,
+        rotation: Quat?,
+        yawDegrees: Float?,
+        allowConvexFallback: Boolean,
+    ): Boolean {
+        val navRoot = navigationRoot ?: return false
+        if (dropInFlight) return false
         dropInFlight = true
         return try {
             val shape =
-                createBoundingBoxShape()
-                    ?: collisionMesh
-                        ?.let { runCatching { ShapeResource.createConvexMesh(it) }.getOrNull() }
-                        ?.takeIf { it.valid }
+                createBoundingBoxShape(center, halfExtents)
+                    ?: if (allowConvexFallback) {
+                        collisionMesh
+                            ?.let { runCatching { ShapeResource.createConvexMesh(it) }.getOrNull() }
+                            ?.takeIf { it.valid }
+                    } else {
+                        null
+                    }
                     ?: ShapeResource.createBox(
                         Vector3(
-                            (modelHalfExtents.x * 2f).coerceIn(0.02f, 10f),
-                            (modelHalfExtents.y * 2f).coerceIn(0.02f, 10f),
-                            (modelHalfExtents.z * 2f).coerceIn(0.02f, 10f),
+                            (halfExtents.x * 2f).coerceIn(0.02f, 10f),
+                            (halfExtents.y * 2f).coerceIn(0.02f, 10f),
+                            (halfExtents.z * 2f).coerceIn(0.02f, 10f),
                         )
                     )
             val material =
@@ -503,10 +613,17 @@ internal class PlacementController {
             val entity = withContext(Dispatchers.IO) { Entity.loadSuspend(file) }
             entity.components[TransformComponent::class.java]?.apply {
                 setPosition(
-                    Vector3(position.x, position.y + DROP_SPAWN_LIFT_METERS, position.z)
+                    Vector3(
+                        positionLocal.x,
+                        positionLocal.y + DROP_SPAWN_LIFT_METERS,
+                        positionLocal.z,
+                    )
                 )
                 setScaleVector(scaleVector)
-                rotation?.let { setQuaternion(it) }
+                when {
+                    rotation != null -> setQuaternion(rotation)
+                    yawDegrees != null -> setEulerAngles(EulerAngles(yaw = yawDegrees))
+                }
             }
             entity.components.set(
                 CollisionComponent(collisionShape = listOf(shape), physicsMaterial = material)
@@ -520,13 +637,17 @@ internal class PlacementController {
             )
             navRoot.addChild(entity)
             entity.enabled = true
-            placedObjects += PlacedObject(entity, modelCenter, modelHalfExtents, scaleVector.x)
+            placedObjects += PlacedObject(entity, displayName, center, halfExtents, scaleVector.x)
             placedShapes += shape
             placedMaterials += material
-            Log.d(TAG, "drop: placed at $position scale=$scaleVector shapeValid=${shape.valid}")
+            Log.w(
+                TAG,
+                "spawnPlaced: $displayName at $positionLocal scale=$scaleVector " +
+                    "shapeValid=${shape.valid}",
+            )
             true
         } catch (error: Exception) {
-            Log.w(TAG, "drop failed", error)
+            Log.w(TAG, "spawnPlaced failed", error)
             false
         } finally {
             dropInFlight = false
@@ -540,17 +661,17 @@ internal class PlacementController {
      * first-mesh convex hull could be much smaller than the visible model on multi-node
      * files, which let objects visibly pass through each other.
      */
-    private fun createBoundingBoxShape(): ShapeResource? {
+    private fun createBoundingBoxShape(center: Vector3, halfExtents: Vector3): ShapeResource? {
         val size =
             Vector3(
-                (modelHalfExtents.x * 2f).coerceIn(0.02f, 10f),
-                (modelHalfExtents.y * 2f).coerceIn(0.02f, 10f),
-                (modelHalfExtents.z * 2f).coerceIn(0.02f, 10f),
+                (halfExtents.x * 2f).coerceIn(0.02f, 10f),
+                (halfExtents.y * 2f).coerceIn(0.02f, 10f),
+                (halfExtents.z * 2f).coerceIn(0.02f, 10f),
             )
         return runCatching {
                 val base = ShapeResource.createBox(size)
                 try {
-                    base.offsetByTranslation(modelCenter)
+                    base.offsetByTranslation(center)
                 } finally {
                     base.close()
                 }

@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="离线填写家具模型参数，实时生成并下载标准 JSON。"
+    >
+    <title>家具模型参数生成器</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#model-form">跳到填写区域</a>
+
+    <header class="masthead">
+      <div class="brand">
+        <p class="eyebrow">MODEL DNA · LOCAL TOOL</p>
+        <h1>家具模型参数生成器</h1>
+        <p>
+          不上传模型、不调用 AI。用固定参数描述家具，填写完成后直接下载 JSON。
+        </p>
+      </div>
+      <div class="header-actions" aria-label="页面操作">
+        <button class="button button-ghost" id="load-example" type="button">
+          载入示例
+        </button>
+        <button class="button button-ghost danger" id="reset-form" type="button">
+          重置
+        </button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="form-column" aria-labelledby="form-title">
+        <div class="progress-card">
+          <div>
+            <p class="eyebrow" id="form-title">填写进度</p>
+            <strong id="completion-text">0% · 先填写必填项</strong>
+          </div>
+          <div
+            class="progress-track"
+            role="progressbar"
+            aria-label="填写完成度"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0"
+          >
+            <span id="progress-fill"></span>
+          </div>
+          <p class="save-state" id="save-state">草稿只保存在这个浏览器</p>
+        </div>
+
+        <form id="model-form" novalidate>
+          <fieldset class="form-card">
+            <legend><span>01</span> 基础身份</legend>
+            <p class="section-note">用于唯一识别、搜索和管理这件家具。</p>
+            <div class="field-grid">
+              <label class="field">
+                <span>模型 ID <em>必填</em></span>
+                <input
+                  data-bind="identity.id"
+                  name="model_id"
+                  autocomplete="off"
+                  maxlength="80"
+                  placeholder="例如 chair-oak-001"
+                  required
+                >
+                <small>只用小写字母、数字和连字符。</small>
+              </label>
+              <label class="field">
+                <span>中文名称 <em>必填</em></span>
+                <input
+                  data-bind="identity.name"
+                  name="model_name"
+                  maxlength="120"
+                  placeholder="例如 浅木餐椅"
+                  required
+                >
+              </label>
+              <label class="field">
+                <span>品类 <em>必填</em></span>
+                <select data-bind="classification.category" name="category" required>
+                  <option value="">请选择</option>
+                  <option value="sofa">沙发</option>
+                  <option value="sofa_bed">沙发床</option>
+                  <option value="lounge_chair">休闲椅</option>
+                  <option value="dining_chair">餐椅</option>
+                  <option value="office_chair">办公椅</option>
+                  <option value="stool">凳子</option>
+                  <option value="bench">长凳</option>
+                  <option value="coffee_table">茶几</option>
+                  <option value="dining_table">餐桌</option>
+                  <option value="desk">书桌</option>
+                  <option value="bed">床</option>
+                  <option value="nightstand">床头柜</option>
+                  <option value="cabinet">柜体</option>
+                  <option value="wardrobe">衣柜</option>
+                  <option value="shelf">置物架</option>
+                  <option value="lighting">灯具</option>
+                  <option value="decor">装饰品</option>
+                  <option value="other">其他</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>数据状态</span>
+                <select data-bind="identity.status" name="status">
+                  <option value="draft">草稿</option>
+                  <option value="reviewed">已复核</option>
+                  <option value="approved">已批准</option>
+                </select>
+              </label>
+              <label class="field full">
+                <span>简短描述</span>
+                <textarea
+                  data-bind="identity.description"
+                  name="description"
+                  rows="3"
+                  maxlength="2000"
+                  placeholder="造型、用途和最容易识别的特点"
+                ></textarea>
+              </label>
+            </div>
+            <div class="subsection">
+              <h2>适用房间</h2>
+              <div class="chip-grid" id="room-options"></div>
+            </div>
+          </fieldset>
+
+          <fieldset class="form-card">
+            <legend><span>02</span> GLB 文件、来源与许可证</legend>
+            <p class="section-note">
+              文件可以放在云端；这里只记录地址和授权信息，不下载文件。
+            </p>
+            <div class="field-grid">
+              <label class="field full">
+                <span>GLB 下载地址</span>
+                <input
+                  data-bind="asset.glbUrl"
+                  name="glb_url"
+                  type="url"
+                  inputmode="url"
+                  placeholder="https://.../model.glb"
+                >
+              </label>
+              <label class="field full">
+                <span>缩略图地址</span>
+                <input
+                  data-bind="asset.thumbnailUrl"
+                  name="thumbnail_url"
+                  type="url"
+                  inputmode="url"
+                  placeholder="https://.../preview.jpg"
+                >
+              </label>
+              <label class="field">
+                <span>文件大小（bytes）</span>
+                <input
+                  data-bind="asset.fileSizeBytes"
+                  name="file_size_bytes"
+                  type="number"
+                  inputmode="numeric"
+                  min="0"
+                  step="1"
+                  placeholder="例如 32036"
+                >
+              </label>
+              <label class="field">
+                <span>SHA-256</span>
+                <input
+                  data-bind="asset.sha256"
+                  name="sha256"
+                  maxlength="64"
+                  autocomplete="off"
+                  placeholder="64 位校验值"
+                >
+              </label>
+              <label class="field">
+                <span>来源平台</span>
+                <input
+                  data-bind="source.provider"
+                  name="provider"
+                  maxlength="240"
+                  placeholder="例如 Poly Haven"
+                >
+              </label>
+              <label class="field">
+                <span>平台资产 ID</span>
+                <input
+                  data-bind="source.assetId"
+                  name="source_asset_id"
+                  maxlength="240"
+                >
+              </label>
+              <label class="field full">
+                <span>来源页面</span>
+                <input
+                  data-bind="source.pageUrl"
+                  name="source_page_url"
+                  type="url"
+                  inputmode="url"
+                  placeholder="https://..."
+                >
+              </label>
+              <label class="field">
+                <span>作者 / 制作者</span>
+                <input data-bind="source.author" name="author" maxlength="240">
+              </label>
+              <label class="field">
+                <span>SPDX 许可证</span>
+                <input
+                  data-bind="source.licenseSpdx"
+                  name="license_spdx"
+                  maxlength="240"
+                  placeholder="例如 CC0-1.0"
+                >
+              </label>
+              <label class="field full">
+                <span>许可证页面</span>
+                <input
+                  data-bind="source.licenseUrl"
+                  name="license_url"
+                  type="url"
+                  inputmode="url"
+                  placeholder="https://..."
+                >
+              </label>
+              <label class="field">
+                <span>需要署名</span>
+                <select data-bind="source.attributionRequired" name="attribution">
+                  <option value="">未知</option>
+                  <option value="true">是</option>
+                  <option value="false">否</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>云端托管策略</span>
+                <select data-bind="source.hostingPolicy" name="hosting_policy">
+                  <option value="">未知 / 未确认</option>
+                  <option value="self_hosted">允许自行托管</option>
+                  <option value="external_only">只能保留外部链接</option>
+                  <option value="blocked">不允许使用</option>
+                </select>
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset class="form-card">
+            <legend><span>03</span> 尺寸、复杂度与坐标</legend>
+            <p class="section-note">
+              统一使用米。尺寸是后续自动摆放和碰撞判断的重要依据。
+            </p>
+            <div class="field-grid thirds">
+              <label class="field">
+                <span>宽（m）</span>
+                <input data-bind="geometry.widthM" type="number" min="0" step="any" inputmode="decimal">
+              </label>
+              <label class="field">
+                <span>深（m）</span>
+                <input data-bind="geometry.depthM" type="number" min="0" step="any" inputmode="decimal">
+              </label>
+              <label class="field">
+                <span>高（m）</span>
+                <input data-bind="geometry.heightM" type="number" min="0" step="any" inputmode="decimal">
+              </label>
+              <label class="field">
+                <span>顶点数</span>
+                <input data-bind="geometry.vertexCount" type="number" min="0" step="1" inputmode="numeric">
+              </label>
+              <label class="field">
+                <span>三角面数</span>
+                <input data-bind="geometry.triangleCount" type="number" min="0" step="1" inputmode="numeric">
+              </label>
+              <label class="field">
+                <span>材质数</span>
+                <input data-bind="geometry.materialCount" type="number" min="0" step="1" inputmode="numeric">
+              </label>
+              <label class="field">
+                <span>贴图数</span>
+                <input data-bind="geometry.textureCount" type="number" min="0" step="1" inputmode="numeric">
+              </label>
+              <label class="field">
+                <span>向上轴</span>
+                <select data-bind="coordinates.upAxis">
+                  <option value="+Y">+Y</option>
+                  <option value="+Z">+Z</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>正面轴</span>
+                <select data-bind="coordinates.forwardAxis">
+                  <option value="+Z">+Z</option>
+                  <option value="-Z">-Z</option>
+                  <option value="+X">+X</option>
+                  <option value="-X">-X</option>
+                  <option value="+Y">+Y</option>
+                  <option value="-Y">-Y</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>原点规则</span>
+                <select data-bind="coordinates.originRule">
+                  <option value="bottom_center">底部中心</option>
+                  <option value="center">模型中心</option>
+                  <option value="custom">自定义</option>
+                  <option value="unknown">未知</option>
+                </select>
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset class="form-card">
+            <legend><span>04</span> 颜色与材质</legend>
+            <p class="section-note">
+              占比可不填；填写时同一组的合计不能超过 100%。
+            </p>
+            <div class="list-heading">
+              <h2>颜色</h2>
+              <button class="mini-button" id="add-color" type="button">＋ 添加颜色</button>
+            </div>
+            <div class="row-list" id="color-list"></div>
+            <div class="list-heading material-heading">
+              <h2>材质</h2>
+              <button class="mini-button" id="add-material" type="button">＋ 添加材质</button>
+            </div>
+            <div class="row-list" id="material-list"></div>
+          </fieldset>
+
+          <fieldset class="form-card">
+            <legend><span>05</span> 造型与表面特征</legend>
+            <p class="section-note">
+              先勾选“已观察”，再拖动强度。没有把握就保持未观察。
+            </p>
+            <div class="slider-list" id="feature-list"></div>
+          </fieldset>
+
+          <fieldset class="form-card">
+            <legend><span>06</span> 结构与摆放</legend>
+            <div class="field-grid">
+              <label class="field">
+                <span>装配方式</span>
+                <select data-bind="construction.assemblyType">
+                  <option value="fixed">固定结构</option>
+                  <option value="knock_down">可拆装结构</option>
+                  <option value="modular">模块化结构</option>
+                  <option value="unknown">未知</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>是否可拆装</span>
+                <select data-bind="construction.detachable">
+                  <option value="">未知</option>
+                  <option value="true">是</option>
+                  <option value="false">否</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>支撑结构</span>
+                <select data-bind="construction.supportType">
+                  <option value="floor_base">落地底座</option>
+                  <option value="legs">腿式支撑</option>
+                  <option value="pedestal">中柱 / 台座</option>
+                  <option value="wall_mounted">壁挂</option>
+                  <option value="suspended">悬吊</option>
+                  <option value="mixed">混合</option>
+                  <option value="unknown">未知</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>放置表面</span>
+                <select data-bind="placement.supportSurface">
+                  <option value="floor">地面</option>
+                  <option value="wall">墙面</option>
+                  <option value="ceiling">天花</option>
+                  <option value="tabletop">台面</option>
+                  <option value="other">其他</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>是否需要靠墙</span>
+                <select data-bind="placement.againstWall">
+                  <option value="">未知</option>
+                  <option value="true">是</option>
+                  <option value="false">否</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>正面净空（m）</span>
+                <input data-bind="placement.frontClearanceM" type="number" min="0" step="any" inputmode="decimal">
+              </label>
+              <label class="field">
+                <span>侧面净空（m）</span>
+                <input data-bind="placement.sideClearanceM" type="number" min="0" step="any" inputmode="decimal">
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset class="form-card">
+            <legend><span>07</span> 风格评分</legend>
+            <p class="section-note">
+              这是人工判断：0 表示完全不符合，100 表示非常符合。风格可同时存在。
+            </p>
+            <div class="slider-list style-list" id="style-list"></div>
+            <label class="field full top-gap">
+              <span>评分依据 / 备注</span>
+              <textarea
+                data-bind="assessmentNotes"
+                rows="3"
+                maxlength="2000"
+                placeholder="例如：浅木、低饱和、结构简洁，因此北欧和宜家分数较高。"
+              ></textarea>
+            </label>
+          </fieldset>
+
+          <fieldset class="form-card">
+            <legend><span>08</span> 补充说明</legend>
+            <label class="field full">
+              <span>备注</span>
+              <textarea
+                data-bind="notes"
+                rows="4"
+                maxlength="2000"
+                placeholder="记录模型缺陷、待复核项、使用限制等"
+              ></textarea>
+            </label>
+          </fieldset>
+        </form>
+      </section>
+
+      <aside class="preview-column" aria-labelledby="preview-title">
+        <div class="preview-panel">
+          <div class="preview-header">
+            <div>
+              <p class="eyebrow">LIVE JSON</p>
+              <h2 id="preview-title">实时预览</h2>
+            </div>
+            <span class="status-badge invalid" id="validity-badge">待完善</span>
+          </div>
+          <div class="issue-box" id="issue-box">
+            <p id="issue-summary">填写 ID、名称和品类后即可下载。</p>
+            <ul id="issue-list"></ul>
+          </div>
+          <pre class="json-preview" id="json-preview" tabindex="0"></pre>
+          <div class="preview-actions">
+            <button class="button button-secondary" id="copy-json" type="button" disabled>
+              复制 JSON
+            </button>
+            <button class="button button-primary" id="download-json" type="button" disabled>
+              填写并下载 JSON
+            </button>
+          </div>
+          <p class="privacy-note">
+            数据只在本机浏览器中处理。下载时会自动写入生成时间。
+          </p>
+        </div>
+      </aside>
+    </main>
+
+    <footer>
+      <p>
+        固定输出 <code>GLB</code> 资产记录；风格分数不会自动推断，也不会替代人工复核。
+      </p>
+    </footer>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="./core.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>

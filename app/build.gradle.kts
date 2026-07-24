@@ -1,7 +1,20 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+}
+
+val localProps =
+    Properties().apply {
+        val file = rootProject.file("local.properties")
+        if (file.exists()) file.inputStream().use { load(it) }
+    }
+
+fun localProp(key: String, default: String): String {
+    val value = (localProps.getProperty(key) ?: default).replace("\\", "\\\\").replace("\"", "\\\"")
+    return "\"$value\""
 }
 
 android {
@@ -17,6 +30,11 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters.add("arm64-v8a") }
+
+        // AI Arrange feature: OpenAI-compatible relay settings from local.properties.
+        buildConfigField("String", "AI_API_BASE", localProp("ai.api.base", "https://api.openai-next.com/v1"))
+        buildConfigField("String", "AI_API_KEY", localProp("ai.api.key", ""))
+        buildConfigField("String", "AI_API_MODEL", localProp("ai.api.model", "gpt-4o-mini"))
     }
 
     buildTypes {
@@ -41,6 +59,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
 }
@@ -59,6 +78,7 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(project(":editor-asset"))
     testImplementation(libs.junit)
+    testImplementation(libs.org.json)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     debugImplementation(libs.androidx.ui.tooling)

@@ -1,5 +1,6 @@
 package com.example.testfull.content
 
+import android.util.Log
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -10,6 +11,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import com.example.testfull.BuildConfig
 import com.pico.spatial.core.ecs.Entity
 import com.pico.spatial.core.ecs.TransformComponent
 import com.pico.spatial.core.ecs.resource.AssetBundle
@@ -18,6 +20,7 @@ import com.pico.spatial.core.math.Vector3
 import com.pico.spatial.tracking.controller.ControllerTrackingProvider
 import com.pico.spatial.tracking.hmd.HMDTrackingProvider
 import com.pico.spatial.ui.foundation.content.SpatialView
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -53,6 +56,7 @@ private class AimState {
 private const val ROOM_NAVIGATION_LIMIT_METERS = 30f
 private const val AIM_UPDATE_INTERVAL_MS = 33L
 private const val AIM_SOURCE_STALE_MS = 600L
+private const val TAG = "HomeStage"
 
 /** Extra clearance (beyond half the wall thickness) kept between placed objects and walls. */
 private const val FOOTPRINT_CLEARANCE_METERS = 0.05f
@@ -84,6 +88,25 @@ private fun localFootprint(plan: FloorPlan): Pair<List<PlanWall>, Float> {
     return walls to margin
 }
 
+/** The plan's doors/windows translated into navigation-root-local coordinates, for the AI. */
+private fun localOpenings(plan: FloorPlan): List<OpeningDesc> {
+    val normalized = plan.normalized()
+    if (normalized.walls.isEmpty()) return emptyList()
+    val bounds = normalized.bounds()
+    return normalized.openings.mapNotNull { opening ->
+        val wall =
+            normalized.walls.firstOrNull { it.id == opening.wallId } ?: return@mapNotNull null
+        val center = opening.worldPosition(wall)
+        OpeningDesc(
+            type = opening.type,
+            wallId = opening.wallId,
+            x = center.x - bounds.centerX,
+            z = center.z - bounds.centerZ,
+            width = opening.width,
+        )
+    }
+}
+
 @Composable
 fun HomeStage() {
     var selectedEnvironment by remember { mutableStateOf(AppEnvironment.ROOM) }
@@ -111,6 +134,102 @@ fun HomeStage() {
     var modelScale by remember { mutableStateOf(1f) }
     var placedCount by remember { mutableIntStateOf(0) }
     var aimStatus by remember { mutableStateOf("Aim: idle") }
+
+    // --- AI Arrange state ---
+    var modelCatalog by remember { mutableStateOf<List<CatalogModel>>(emptyList()) }
+    var aiPrompt by remember { mutableStateOf("") }
+    var aiBusy by remember { mutableStateOf(false) }
+    var aiStatus by remember { mutableStateOf("") }
+
+    // Single entry point for AI arranging, used by the panel button and the debug hook.
+    val runAiArrange: () -> Unit = runAiArrange@{
+        Log.w(
+            TAG,
+            "runAiArrange: busy=$aiBusy promptLen=${aiPrompt.length} " +
+                "models=${availableModels.size} catalog=${modelCatalog.size}",
+        )
+        if (aiBusy) return@runAiArrange
+        scope.launch {
+            aiBusy = true
+            aiStatus = "Asking AI…"
+            try {
+                // Scan/measure on demand so the button works even when the user never pressed
+                // "Scan models folder".
+                if (availableModels.isEmpty()) {
+                    availableModels = scanModels(context)
+                }
+                if (modelCatalog.isEmpty()) {
+                    aiStatus = "Measuring models…"
+                    modelCatalog = buildCatalog(availableModels)
+                }
+                if (modelCatalog.isEmpty()) {
+                    aiStatus =
+                        "No usable models — push .glb files to the app's " +
+                            "files/models folder first."
+                    return@launch
+                }
+                val (footprintWalls, footprintMargin) = localFootprint(appliedPlan)
+                val openings = localOpenings(appliedPlan)
+                val layout =
+                    requestAiLayout(
+                        userPrompt = aiPrompt,
+                        walls = footprintWalls,
+                        openings = openings,
+                        catalog = modelCatalog,
+                        currentPlacements = placementController.placedSummaries(),
+                    )
+                val resolved =
+                    resolveAiPlacements(
+                        layout = layout,
+                        catalog = modelCatalog,
+                        walls = footprintWalls,
+                        baseMargin = footprintMargin,
+                    )
+                // Apply = replace: the AI's layout is the full desired state, which also
+                // covers "move the existing furniture".
+                placementController.clearPlaced()
+                var spawned = 0
+                resolved.accepted.forEach { placement ->
+                    val placed =
+                        placementController.placeFromAi(
+                            model = placement.model,
+                            x = placement.x,
+                            z = placement.z,
+                            yawDegrees = placement.yawDegrees,
+                            scale = placement.scale,
+                        )
+                    if (placed) {
+                        spawned += 1
+                        aiStatus = "Placing… $spawned/${resolved.accepted.size}"
+                    }
+                    // Let frames through between physics spawns (ANR guard for the emulator).
+                    delay(200)
+                }
+                placedCount = placementController.placedCount
+                aiStatus =
+                    buildString {
+                        append("AI placed $spawned of ${layout.placements.size}.")
+                        if (resolved.adjusted.isNotEmpty()) {
+                            append(" Adjusted: ")
+                            append(resolved.adjusted.joinToString(", "))
+                            append(".")
+                        }
+                        if (resolved.skipped.isNotEmpty()) {
+                            append(" Skipped: ")
+                            append(resolved.skipped.joinToString(", "))
+                            append(".")
+                        }
+                        layout.notes?.let { append(" $it") }
+                    }
+            } catch (error: AiArrangeException) {
+                aiStatus = "AI error: ${error.message}"
+            } catch (error: Exception) {
+                aiStatus = "AI arrange failed: ${error.message}"
+            } finally {
+                aiBusy = false
+            }
+        }
+    }
 
     // Tracking listeners post into aimState; the main-thread loop below consumes them.
     remember {
@@ -202,7 +321,7 @@ fun HomeStage() {
             val nextStatus =
                 "Aim: $source · target: " +
                     (if (placementController.hasAimTarget) "yes" else "no") +
-                    (if (placementController.isGhostBlocked) " · BLOCKED (overlaps furniture)" else "") +
+                    (if (placementController.isGhostBlocked) " · BLOCKED (no free space)" else "") +
                     " · trigger hits: ${aimState.triggerEventCount}"
             if (nextStatus != aimStatus) {
                 aimStatus = nextStatus
@@ -213,6 +332,27 @@ fun HomeStage() {
 
     DisposableEffect(Unit) {
         onDispose { placementController.dispose() }
+    }
+
+    // Debug-only test hook: an ai_test_prompt.txt pushed into the app's files dir runs the AI
+    // arrange flow with that prompt once, then deletes the file. Lets the full pipeline be
+    // driven end-to-end from adb without UI input.
+    if (BuildConfig.DEBUG) {
+        LaunchedEffect(Unit) {
+            val triggerFile = File(context.getExternalFilesDir(null), "ai_test_prompt.txt")
+            while (true) {
+                if (triggerFile.exists() && !aiBusy) {
+                    val prompt = runCatching { triggerFile.readText().trim() }.getOrDefault("")
+                    runCatching { triggerFile.delete() }
+                    Log.w(TAG, "debug hook: prompt file -> \"$prompt\"")
+                    if (prompt.isNotEmpty()) {
+                        aiPrompt = prompt
+                        runAiArrange()
+                    }
+                }
+                delay(1000)
+            }
+        }
     }
 
     SpatialView(
@@ -422,7 +562,15 @@ fun HomeStage() {
                     placementActive = placementActive,
                     modelScale = modelScale,
                     placedCount = placedCount,
-                    onScanModels = { availableModels = scanModels(context) },
+                    onScanModels = {
+                        availableModels = scanModels(context)
+                        scope.launch {
+                            modelCatalog = buildCatalog(availableModels)
+                            aiStatus =
+                                "Models: ${availableModels.size} found, " +
+                                    "${modelCatalog.size} AI-ready."
+                        }
+                    },
                     onModelSelected = { model ->
                         scope.launch {
                             if (placementController.selectModel(model.file, model.displayName)) {
@@ -455,6 +603,11 @@ fun HomeStage() {
                             }
                         }
                     },
+                    aiPrompt = aiPrompt,
+                    aiBusy = aiBusy,
+                    aiStatus = aiStatus,
+                    onAiPromptChange = { aiPrompt = it },
+                    onArrangeWithAi = runAiArrange,
                 )
             }
         },

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Model Manager — PICO Room Planner</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px; max-width: 760px; margin-inline: auto;
+    font: 15px/1.5 system-ui, "Segoe UI", sans-serif;
+    background: #10151c; color: #e6edf3;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #8b98a9; font-size: 13px; margin-bottom: 20px; word-break: break-all; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; margin-left: 8px; vertical-align: middle; }
+  .ok { background: #123d25; color: #4ade80; }
+  .bad { background: #431a1a; color: #f87171; }
+  #drop {
+    border: 2px dashed #3b4a5e; border-radius: 14px; padding: 34px 20px;
+    text-align: center; color: #8b98a9; cursor: pointer; transition: .15s;
+  }
+  #drop.hover { border-color: #4ade80; background: #14202b; color: #e6edf3; }
+  #drop strong { color: #e6edf3; }
+  .row { display: flex; gap: 10px; align-items: center; margin-top: 18px; }
+  button {
+    background: #1f6feb; color: #fff; border: 0; border-radius: 8px;
+    padding: 8px 14px; font: inherit; cursor: pointer;
+  }
+  button.ghost { background: #222c38; }
+  button.danger { background: #8c2b2b; }
+  button:disabled { opacity: .45; cursor: default; }
+  ul#files { list-style: none; padding: 0; margin: 18px 0 0; }
+  ul#files li {
+    display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+    background: #161e28; border-radius: 10px; margin-bottom: 8px;
+  }
+  .fname { flex: 1; word-break: break-all; }
+  .fsize { color: #8b98a9; font-size: 13px; white-space: nowrap; }
+  .kind { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: #24303e; color: #9fb4cc; }
+  .kind.model { background: #123d25; color: #4ade80; }
+  .kind.meta { background: #2c2a12; color: #e8c85a; }
+  li button { padding: 4px 10px; font-size: 13px; }
+  #log {
+    margin-top: 18px; padding: 12px; background: #0b0f14; border-radius: 10px;
+    font: 12px/1.6 ui-monospace, Consolas, monospace; color: #8b98a9;
+    max-height: 180px; overflow-y: auto; white-space: pre-wrap;
+  }
+  .empty { color: #5d6b7d; text-align: center; padding: 18px; }
+</style>
+</head>
+<body>
+  <h1>Model Manager <span id="status" class="badge bad">checking…</span></h1>
+  <div class="sub" id="dir">remote: …</div>
+
+  <div id="drop">
+    <strong>Drop .glb / .json files here</strong><br>
+    or click to browse — uploads go straight to the emulator
+    <input type="file" id="picker" multiple hidden>
+  </div>
+
+  <div class="row">
+    <button class="ghost" id="refresh">Refresh</button>
+    <button class="danger" id="clear">Clear all on device</button>
+  </div>
+
+  <ul id="files"></ul>
+  <div id="log"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const log = (msg) => {
+  const el = $("log");
+  const time = new Date().toLocaleTimeString();
+  el.textContent = `[${time}] ${msg}\n` + el.textContent;
+};
+
+function fmtSize(bytes) {
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / 1024 / 1024).toFixed(2) + " MB";
+}
+
+function kindOf(name) {
+  const ext = name.split(".").pop().toLowerCase();
+  if (["glb", "gltf", "usda", "usdc", "usdz"].includes(ext)) return ["model", ext];
+  if (ext === "json") return ["meta", "details"];
+  return ["", ext];
+}
+
+async function api(path, options) {
+  const res = await fetch(path, options);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+  return data;
+}
+
+async function refresh() {
+  try {
+    const data = await api("/api/models");
+    $("dir").textContent = "remote: " + data.dir;
+    const badge = $("status");
+    badge.textContent = data.online ? "device online" : "device OFFLINE";
+    badge.className = "badge " + (data.online ? "ok" : "bad");
+
+    const list = $("files");
+    list.innerHTML = "";
+    if (data.files.length === 0) {
+      list.innerHTML = '<li class="empty">no files on device</li>';
+      return;
+    }
+    for (const file of data.files) {
+      const [cls, label] = kindOf(file.name);
+      const li = document.createElement("li");
+      li.innerHTML =
+        `<span class="kind ${cls}">${label}</span>` +
+        `<span class="fname">${file.name}</span>` +
+        `<span class="fsize">${fmtSize(file.size)}</span>`;
+      const del = document.createElement("button");
+      del.textContent = "Delete";
+      del.className = "ghost";
+      del.onclick = async () => {
+        del.disabled = true;
+        try {
+          await api("/api/delete?name=" + encodeURIComponent(file.name), { method: "POST" });
+          log("deleted " + file.name);
+        } catch (e) { log("delete failed: " + e.message); }
+        refresh();
+      };
+      li.appendChild(del);
+      list.appendChild(li);
+    }
+  } catch (e) {
+    $("status").textContent = "server error";
+    $("status").className = "badge bad";
+    log("refresh failed: " + e.message);
+  }
+}
+
+async function upload(files) {
+  for (const file of files) {
+    log(`pushing ${file.name} (${fmtSize(file.size)})…`);
+    try {
+      await api("/api/push?name=" + encodeURIComponent(file.name), {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: file,
+      });
+      log("pushed " + file.name);
+    } catch (e) {
+      log("push failed for " + file.name + ": " + e.message);
+    }
+  }
+  refresh();
+}
+
+$("refresh").onclick = refresh;
+$("clear").onclick = async () => {
+  if (!confirm("Delete ALL files in the models folder on the device?")) return;
+  try {
+    await api("/api/clear", { method: "POST" });
+    log("cleared all files on device");
+  } catch (e) { log("clear failed: " + e.message); }
+  refresh();
+};
+
+const drop = $("drop");
+drop.onclick = () => $("picker").click();
+$("picker").onchange = (e) => { upload([...e.target.files]); e.target.value = ""; };
+drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("hover"); };
+drop.ondragleave = () => drop.classList.remove("hover");
+drop.ondrop = (e) => {
+  e.preventDefault();
+  drop.classList.remove("hover");
+  upload([...e.dataTransfer.files]);
+};
+
+refresh();
+setInterval(refresh, 15000);
+</script>
+</body>
+</html>
