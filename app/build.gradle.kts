@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.testfull"
         minSdk = 35
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters.add("arm64-v8a") }
@@ -54,14 +54,14 @@ dependencies {
     implementation(libs.design)
     implementation(libs.sense)
     implementation(libs.tracking)
-    implementation(libs.androidx.ui.tooling)
+    implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.annotation)
     implementation(libs.androidx.appcompat)
     implementation(project(":editor-asset"))
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
-    debugImplementation(libs.androidx.ui.tooling.preview)
+    debugImplementation(libs.androidx.ui.tooling)
 }
 
 configurations.all {

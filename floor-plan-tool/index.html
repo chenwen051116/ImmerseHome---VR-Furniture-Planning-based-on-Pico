@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta
+            name="description"
+            content="Draw walls, doors, and windows in plan view and export a PICO Spatial Editor scene."
+        />
+        <title>PICO Floor Plan Studio</title>
+        <link rel="stylesheet" href="styles.css" />
+    </head>
+    <body>
+        <header class="app-header">
+            <div>
+                <p class="eyebrow">PICO SPATIAL WORKFLOW</p>
+                <h1>Floor Plan Studio</h1>
+            </div>
+            <div class="header-actions">
+                <button class="button button-ghost" id="newPlanButton">New</button>
+                <button class="button button-ghost" id="demoPlanButton">Demo room</button>
+                <button class="button button-secondary" id="walkRoomButton">
+                    Walk room in 3D
+                </button>
+                <button class="button button-ghost" id="importJsonButton">Import JSON</button>
+                <button class="button button-ghost" id="exportJsonButton">Export JSON</button>
+                <button class="button button-primary" id="saveUsdaButton">
+                    Save FloorPlan.usda
+                </button>
+            </div>
+        </header>
+
+        <main class="workspace">
+            <aside class="tool-rail" aria-label="Drawing tools">
+                <button class="tool-button active" data-mode="select" title="Select (1)">
+                    <span class="tool-icon">↖</span>
+                    <span>Select</span>
+                    <kbd>1</kbd>
+                </button>
+                <button class="tool-button" data-mode="wall" title="Draw wall (2)">
+                    <span class="tool-icon">╱</span>
+                    <span>Wall</span>
+                    <kbd>2</kbd>
+                </button>
+                <button class="tool-button" data-mode="door" title="Place door (3)">
+                    <span class="tool-icon">⌑</span>
+                    <span>Door</span>
+                    <kbd>3</kbd>
+                </button>
+                <button class="tool-button" data-mode="window" title="Place window (4)">
+                    <span class="tool-icon">▭</span>
+                    <span>Window</span>
+                    <kbd>4</kbd>
+                </button>
+                <div class="tool-divider"></div>
+                <button class="tool-button compact" id="undoButton" title="Undo">
+                    <span class="tool-icon">↶</span>
+                    <span>Undo</span>
+                    <kbd>⌘Z</kbd>
+                </button>
+                <button class="tool-button compact" id="redoButton" title="Redo">
+                    <span class="tool-icon">↷</span>
+                    <span>Redo</span>
+                    <kbd>⇧⌘Z</kbd>
+                </button>
+            </aside>
+
+            <section class="canvas-shell">
+                <canvas id="planCanvas" aria-label="Floor plan drawing canvas"></canvas>
+                <div class="canvas-topbar">
+                    <div class="mode-chip">
+                        <span class="mode-dot"></span>
+                        <span id="modeLabel">Select</span>
+                    </div>
+                    <span class="canvas-hint" id="canvasHint">
+                        Select a wall or opening. Drag endpoints to reshape.
+                    </span>
+                </div>
+                <div class="zoom-controls">
+                    <button id="zoomOutButton" title="Zoom out">−</button>
+                    <span id="zoomLabel">100%</span>
+                    <button id="zoomInButton" title="Zoom in">+</button>
+                    <button id="fitButton" title="Fit plan">Fit</button>
+                </div>
+                <div class="canvas-status">
+                    <span id="coordinateLabel">x 0.00 m · z 0.00 m</span>
+                    <span>Wheel to zoom · Middle/right drag to pan · Esc to cancel</span>
+                </div>
+            </section>
+
+            <aside class="inspector">
+                <section class="panel">
+                    <div class="panel-heading">
+                        <div>
+                            <p class="eyebrow">SELECTION</p>
+                            <h2 id="selectionTitle">Nothing selected</h2>
+                        </div>
+                        <button
+                            class="icon-button danger"
+                            id="deleteSelectionButton"
+                            title="Delete selected item"
+                            disabled
+                        >
+                            ×
+                        </button>
+                    </div>
+                    <div id="selectionProperties" class="properties">
+                        <p class="empty-copy">
+                            Choose Select, then click a wall, door, or window.
+                        </p>
+                    </div>
+                </section>
+
+                <section class="panel">
+                    <div class="panel-heading">
+                        <div>
+                            <p class="eyebrow">PLAN DEFAULTS</p>
+                            <h2>Construction</h2>
+                        </div>
+                    </div>
+                    <div class="form-grid" id="defaultsForm">
+                        <label>
+                            Wall height
+                            <span class="number-field"
+                                ><input
+                                    type="number"
+                                    data-setting="wallHeight"
+                                    min="0.2"
+                                    step="0.1"
+                                /><b>m</b></span
+                            >
+                        </label>
+                        <label>
+                            Wall thickness
+                            <span class="number-field"
+                                ><input
+                                    type="number"
+                                    data-setting="wallThickness"
+                                    min="0.02"
+                                    step="0.01"
+                                /><b>m</b></span
+                            >
+                        </label>
+                        <label>
+                            Grid snap
+                            <span class="number-field"
+                                ><input
+                                    type="number"
+                                    data-setting="snap"
+                                    min="0.01"
+                                    step="0.01"
+                                /><b>m</b></span
+                            >
+                        </label>
+                    </div>
+                </section>
+
+                <section class="panel">
+                    <div class="panel-heading">
+                        <div>
+                            <p class="eyebrow">PHYSICAL SIZE</p>
+                            <h2>Resize plan</h2>
+                        </div>
+                    </div>
+                    <div class="form-grid">
+                        <label>
+                            Footprint width
+                            <span class="number-field"
+                                ><input
+                                    type="number"
+                                    id="planWidthInput"
+                                    min="0.1"
+                                    step="0.1"
+                                /><b>m</b></span
+                            >
+                        </label>
+                        <label>
+                            Footprint depth
+                            <span class="number-field"
+                                ><input
+                                    type="number"
+                                    id="planDepthInput"
+                                    min="0.1"
+                                    step="0.1"
+                                /><b>m</b></span
+                            >
+                        </label>
+                    </div>
+                    <button
+                        class="button button-secondary full plan-size-button"
+                        id="resizePlanButton"
+                    >
+                        Set exact footprint
+                    </button>
+                    <div class="form-grid plan-scale-field">
+                        <label>
+                            Uniform scale
+                            <span class="number-field"
+                                ><input
+                                    type="number"
+                                    id="planScaleInput"
+                                    value="100"
+                                    min="10"
+                                    max="500"
+                                    step="1"
+                                /><b>%</b></span
+                            >
+                        </label>
+                    </div>
+                    <button
+                        class="button button-ghost full plan-size-button"
+                        id="scalePlanButton"
+                    >
+                        Apply physical scale
+                    </button>
+                </section>
+
+                <section class="panel">
+                    <div class="panel-heading">
+                        <div>
+                            <p class="eyebrow">PICO EXPORT</p>
+                            <h2>Scene options</h2>
+                        </div>
+                    </div>
+                    <div class="toggle-list">
+                        <label class="toggle-row">
+                            <span>
+                                <strong>Floor slab</strong>
+                                <small>Bounding-box floor for simple rooms</small>
+                            </span>
+                            <input type="checkbox" data-setting="includeFloor" />
+                        </label>
+                        <label class="toggle-row">
+                            <span>
+                                <strong>Door/window panels</strong>
+                                <small>Keep real wall openings and add simple fixtures</small>
+                            </span>
+                            <input type="checkbox" data-setting="includeFixtures" />
+                        </label>
+                    </div>
+                    <div class="color-grid">
+                        <label>Walls <input type="color" data-setting="wallColor" /></label>
+                        <label>Floor <input type="color" data-setting="floorColor" /></label>
+                        <label>Doors <input type="color" data-setting="doorColor" /></label>
+                        <label>Windows <input type="color" data-setting="windowColor" /></label>
+                    </div>
+                    <button class="button button-secondary full" id="previewUsdaButton">
+                        Preview generated USDA
+                    </button>
+                    <div class="export-note">
+                        <strong>Import workflow</strong>
+                        <ol>
+                            <li>Save as <code>FloorPlan.usda</code>.</li>
+                            <li>
+                                Put it in
+                                <code
+                                    >editor-asset/src/main/res3d/SpatialPackContent/Sources/Scenes/</code
+                                >.
+                            </li>
+                            <li>Rebuild and reinstall the PICO app.</li>
+                            <li>Choose <em>Floor plan</em> in the headset scene switcher.</li>
+                        </ol>
+                    </div>
+                </section>
+            </aside>
+        </main>
+
+        <input type="file" id="jsonFileInput" accept=".json,application/json" hidden />
+
+        <dialog id="usdaDialog">
+            <div class="dialog-header">
+                <div>
+                    <p class="eyebrow">GENERATED SCENE</p>
+                    <h2>FloorPlan.usda</h2>
+                </div>
+                <button class="icon-button" id="closeDialogButton" title="Close">×</button>
+            </div>
+            <div id="validationMessages"></div>
+            <pre id="usdaPreview"></pre>
+            <div class="dialog-actions">
+                <button class="button button-ghost" id="copyUsdaButton">Copy</button>
+                <button class="button button-primary" id="dialogSaveUsdaButton">
+                    Save FloorPlan.usda
+                </button>
+            </div>
+        </dialog>
+
+        <section
+            class="walkthrough-overlay"
+            id="walkthroughOverlay"
+            aria-label="Desktop 3D room walkthrough"
+            hidden
+        >
+            <canvas id="walkthroughCanvas" tabindex="0"></canvas>
+            <div class="walkthrough-topbar">
+                <div>
+                    <p class="eyebrow">UNRESTRICTED DESKTOP WALKTHROUGH</p>
+                    <strong id="walkthroughPosition">X 0.00 m · Y 1.65 m · Z 0.00 m</strong>
+                </div>
+                <div class="walkthrough-actions">
+                    <button class="button button-ghost" id="walkthroughCollisionButton">
+                        Collision: on (C)
+                    </button>
+                    <button class="button button-ghost" id="walkthroughResetButton">
+                        Reset position (R)
+                    </button>
+                    <button class="button button-primary" id="walkthroughExitButton">
+                        Return to plan
+                    </button>
+                </div>
+            </div>
+            <div class="walkthrough-crosshair" aria-hidden="true"></div>
+            <button class="walkthrough-lock-hint" id="walkthroughLockHint">
+                Click the room to capture the mouse
+            </button>
+            <div class="walkthrough-controls">
+                <span><kbd>W A S D</kbd> move</span>
+                <span><kbd>Mouse</kbd> look</span>
+                <span><kbd>Shift</kbd> sprint</span>
+                <span><kbd>C</kbd> collision</span>
+                <span>No PICO boundary or fade</span>
+            </div>
+        </section>
+
+        <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+        <script src="floorplan-core.js"></script>
+        <script src="walkthrough.js"></script>
+        <script src="app.js"></script>
+    </body>
+</html>

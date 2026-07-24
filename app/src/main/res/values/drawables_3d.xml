@@ -4,7 +4,7 @@
         <item>@drawable/icon_3d_sdf_0</item>
     </array>
     <array name="icon_3d_list">
-        <item>@drawable/icon_3d_layer_1</item>
+        <item>@mipmap/ic_room_planner_launcher_1024</item>
         <item>@drawable/icon_3d_layer_0</item>
     </array>
 </resources>
