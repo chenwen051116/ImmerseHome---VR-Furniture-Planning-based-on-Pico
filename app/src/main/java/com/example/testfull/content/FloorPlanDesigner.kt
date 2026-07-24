@@ -123,6 +123,8 @@ internal fun FloorPlanExperiencePanel(
     onPlacementActiveChange: (Boolean) -> Unit,
     onModelScaleChange: (Float) -> Unit,
     onClearPlaced: () -> Unit,
+    aimStatus: String,
+    onDropNow: () -> Unit,
 ) {
     if (!expanded) {
         CompactEnvironmentPanel(
@@ -168,6 +170,8 @@ internal fun FloorPlanExperiencePanel(
         onPlacementActiveChange = onPlacementActiveChange,
         onModelScaleChange = onModelScaleChange,
         onClearPlaced = onClearPlaced,
+        aimStatus = aimStatus,
+        onDropNow = onDropNow,
     )
 }
 
@@ -276,7 +280,7 @@ private fun CompactEnvironmentPanel(
         if (placementActive && selectedModelName != null) {
             Text(
                 text =
-                    "Placing \"$selectedModelName\" ($placedCount dropped) — aim with the controller, click the trigger to drop.",
+                    "Placing \"$selectedModelName\" ($placedCount dropped) — aim with the controller, click the trigger to drop. Red preview = overlaps placed furniture.",
                 style = PicoTheme.typography.titleMedium,
                 fontSize = 13.sp,
                 color = Color(0x99000000),
@@ -315,6 +319,8 @@ private fun FloorPlanDesigner(
     onPlacementActiveChange: (Boolean) -> Unit,
     onModelScaleChange: (Float) -> Unit,
     onClearPlaced: () -> Unit,
+    aimStatus: String,
+    onDropNow: () -> Unit,
 ) {
     var mode by remember { mutableStateOf(DesignerMode.SELECT) }
     var selection by remember { mutableStateOf<PlanSelection?>(null) }
@@ -561,6 +567,8 @@ private fun FloorPlanDesigner(
                 onPlacementActiveChange = onPlacementActiveChange,
                 onModelScaleChange = onModelScaleChange,
                 onClearPlaced = onClearPlaced,
+                aimStatus = aimStatus,
+                onDropNow = onDropNow,
             )
         }
     }
@@ -881,6 +889,8 @@ private fun Inspector(
     onPlacementActiveChange: (Boolean) -> Unit,
     onModelScaleChange: (Float) -> Unit,
     onClearPlaced: () -> Unit,
+    aimStatus: String,
+    onDropNow: () -> Unit,
 ) {
     val wall =
         if (selection?.kind == SelectionKind.WALL) {
@@ -1225,7 +1235,7 @@ private fun Inspector(
             Text(
                 text =
                     if (placementActive) {
-                        "Aim with the controller — the ghost shows the resting pose. Click the trigger to drop."
+                        "Aim with the controller or your view — the ghost shows the resting pose. Click the trigger or tap Drop."
                     } else {
                         "Enable placing to aim and drop \"$selectedModelName\" with physics."
                     },
@@ -1233,6 +1243,24 @@ private fun Inspector(
                 fontSize = 13.sp,
                 color = Color(0x99000000),
             )
+            if (placementActive) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = aimStatus,
+                    style = PicoTheme.typography.titleMedium,
+                    fontSize = 12.sp,
+                    color = Color(0x99000000),
+                )
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = onDropNow,
+                    enabled = roomAvailable,
+                    size = ButtonDefaults.Max,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Drop at ghost")
+                }
+            }
             Spacer(Modifier.height(8.dp))
             Button(
                 onClick = onClearPlaced,

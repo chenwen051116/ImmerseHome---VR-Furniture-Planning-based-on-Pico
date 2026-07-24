@@ -382,3 +382,57 @@ internal fun FloorPlan.resizedFootprint(
         )
         .normalized()
 }
+
+/* --- Footprint containment: keep placed furniture inside the building --- */
+
+/** Horizontal distance from [point] to the nearest wall segment, in meters. */
+internal fun distanceToWalls(walls: List<PlanWall>, point: PlanPoint): Float =
+    walls.minOfOrNull { it.project(point).distance } ?: Float.MAX_VALUE
+
+/**
+ * Even-odd point-in-polygon test across all wall segments (a horizontal ray toward +X).
+ * Works for closed loops and disjoint loops; returns false for an empty plan.
+ */
+internal fun isInsideFootprint(walls: List<PlanWall>, point: PlanPoint): Boolean {
+    if (walls.isEmpty()) return false
+    var crossings = 0
+    walls.forEach { wall ->
+        val a = wall.start
+        val b = wall.end
+        if ((a.z > point.z) != (b.z > point.z)) {
+            val xCross = a.x + (point.z - a.z) * (b.x - a.x) / (b.z - a.z)
+            if (xCross > point.x) crossings += 1
+        }
+    }
+    return crossings % 2 == 1
+}
+
+private fun footprintConstraintOk(walls: List<PlanWall>, point: PlanPoint, margin: Float): Boolean =
+    isInsideFootprint(walls, point) && distanceToWalls(walls, point) >= margin
+
+/**
+ * Clamps [point] to the building footprint: the result is inside the wall polygon and at least
+ * [margin] meters away from every wall. Points already satisfying the constraint are returned
+ * unchanged; others are moved toward the wall centroid in small steps until they satisfy it.
+ * With no walls the point is returned unchanged (no constraint).
+ */
+internal fun clampToFootprint(walls: List<PlanWall>, point: PlanPoint, margin: Float): PlanPoint {
+    if (walls.isEmpty()) return point
+    if (footprintConstraintOk(walls, point, margin)) return point
+
+    val centroidX =
+        walls.sumOf { (it.start.x + it.end.x).toDouble() }.toFloat() / (walls.size * 2)
+    val centroidZ =
+        walls.sumOf { (it.start.z + it.end.z).toDouble() }.toFloat() / (walls.size * 2)
+
+    var current = point
+    repeat(500) {
+        if (footprintConstraintOk(walls, current, margin)) return current
+        current =
+            PlanPoint(
+                x = current.x + (centroidX - current.x) * 0.02f,
+                z = current.z + (centroidZ - current.z) * 0.02f,
+            )
+    }
+    return PlanPoint(centroidX, centroidZ)
+}

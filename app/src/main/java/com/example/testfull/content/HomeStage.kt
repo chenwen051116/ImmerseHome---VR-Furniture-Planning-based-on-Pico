@@ -39,14 +39,50 @@ private data class RoomNavigationPosition(
 
 /** Thread-safe slot for the latest tracking data; providers post off the main thread. */
 private class AimState {
-    @Volatile var position: Vector3? = null
-    @Volatile var rotation: Quat? = null
+    @Volatile var controllerPosition: Vector3? = null
+    @Volatile var controllerRotation: Quat? = null
+    @Volatile var controllerUpdatedAt: Long = 0L
+    @Volatile var hmdPosition: Vector3? = null
+    @Volatile var hmdRotation: Quat? = null
+    @Volatile var hmdUpdatedAt: Long = 0L
     @Volatile var dropRequested: Boolean = false
     @Volatile var lastTriggerPressed: Boolean = false
+    @Volatile var triggerEventCount: Int = 0
 }
 
 private const val ROOM_NAVIGATION_LIMIT_METERS = 30f
 private const val AIM_UPDATE_INTERVAL_MS = 33L
+private const val AIM_SOURCE_STALE_MS = 600L
+
+/** Extra clearance (beyond half the wall thickness) kept between placed objects and walls. */
+private const val FOOTPRINT_CLEARANCE_METERS = 0.05f
+
+/**
+ * The room's wall segments translated into navigation-root-local coordinates (the generated room
+ * recenters the plan around its bounds center), plus the clearance margin for placement.
+ */
+private fun localFootprint(plan: FloorPlan): Pair<List<PlanWall>, Float> {
+    val normalized = plan.normalized()
+    if (normalized.walls.isEmpty()) return emptyList<PlanWall>() to 0f
+    val bounds = normalized.bounds()
+    val walls =
+        normalized.walls.map { wall ->
+            wall.copy(
+                start =
+                    PlanPoint(
+                        wall.start.x - bounds.centerX,
+                        wall.start.z - bounds.centerZ,
+                    ),
+                end =
+                    PlanPoint(
+                        wall.end.x - bounds.centerX,
+                        wall.end.z - bounds.centerZ,
+                    ),
+            )
+        }
+    val margin = normalized.walls.maxOf { it.thickness } / 2f + FOOTPRINT_CLEARANCE_METERS
+    return walls to margin
+}
 
 @Composable
 fun HomeStage() {
@@ -74,29 +110,30 @@ fun HomeStage() {
     var placementActive by remember { mutableStateOf(false) }
     var modelScale by remember { mutableStateOf(1f) }
     var placedCount by remember { mutableIntStateOf(0) }
+    var aimStatus by remember { mutableStateOf("Aim: idle") }
 
     // Tracking listeners post into aimState; the main-thread loop below consumes them.
     remember {
         controllerProvider.addListener { data ->
             val pose = data.right ?: data.left
             if (pose != null) {
-                aimState.position = pose.position
-                aimState.rotation = pose.rotation
+                aimState.controllerPosition = pose.position
+                aimState.controllerRotation = pose.rotation
+                aimState.controllerUpdatedAt = System.currentTimeMillis()
             }
         }
         controllerProvider.addControllerActionListener { action ->
             val trigger = action.right.triggerPressed || action.left.triggerPressed
             if (trigger && !aimState.lastTriggerPressed) {
                 aimState.dropRequested = true
+                aimState.triggerEventCount += 1
             }
             aimState.lastTriggerPressed = trigger
         }
         hmdProvider.addListener { data ->
-            // Gaze fallback only when no controller has reported yet.
-            if (aimState.position == null) {
-                aimState.position = data.hmdPose.position
-                aimState.rotation = data.hmdPose.rotation
-            }
+            aimState.hmdPosition = data.hmdPose.position
+            aimState.hmdRotation = data.hmdPose.rotation
+            aimState.hmdUpdatedAt = System.currentTimeMillis()
         }
         true
     }
@@ -113,14 +150,46 @@ fun HomeStage() {
         }
     }
 
-    // Main-thread aim/drop loop while placement mode is on.
+    // Main-thread aim/drop loop while placement mode is on. Uses whichever tracking source
+    // reported most recently: controllers in headset mode, head gaze otherwise.
     LaunchedEffect(placementActive) {
         if (!placementActive) return@LaunchedEffect
         while (true) {
-            val position = aimState.position
-            val rotation = aimState.rotation
+            val now = System.currentTimeMillis()
+            val useController =
+                aimState.controllerPosition != null &&
+                    aimState.controllerRotation != null &&
+                    now - aimState.controllerUpdatedAt <= AIM_SOURCE_STALE_MS
+            val useHmd =
+                !useController &&
+                    aimState.hmdPosition != null &&
+                    aimState.hmdRotation != null &&
+                    now - aimState.hmdUpdatedAt <= AIM_SOURCE_STALE_MS
+
+            val position: Vector3?
+            val rotation: Quat?
+            val source: String
+            when {
+                useController -> {
+                    position = aimState.controllerPosition
+                    rotation = aimState.controllerRotation
+                    source = "controller"
+                }
+                useHmd -> {
+                    position = aimState.hmdPosition
+                    rotation = aimState.hmdRotation
+                    source = "headset gaze"
+                }
+                else -> {
+                    position = null
+                    rotation = null
+                    source = "none"
+                }
+            }
+
             if (position != null && rotation != null) {
-                placementController.updateAim(position, rotation)
+                val userPosition = aimState.hmdPosition ?: position
+                placementController.updateAim(position, rotation, userPosition)
             } else {
                 placementController.hideGhost()
             }
@@ -129,6 +198,14 @@ fun HomeStage() {
                 if (placementController.drop()) {
                     placedCount = placementController.placedCount
                 }
+            }
+            val nextStatus =
+                "Aim: $source · target: " +
+                    (if (placementController.hasAimTarget) "yes" else "no") +
+                    (if (placementController.isGhostBlocked) " · BLOCKED (overlaps furniture)" else "") +
+                    " · trigger hits: ${aimState.triggerEventCount}"
+            if (nextStatus != aimStatus) {
+                aimStatus = nextStatus
             }
             delay(AIM_UPDATE_INTERVAL_MS)
         }
@@ -155,6 +232,8 @@ fun HomeStage() {
                 attachedEnvironment.environment = AppEnvironment.ROOM
                 roomAvailable = true
                 placementController.bind(room.navigationRoot)
+                val (footprintWalls, footprintMargin) = localFootprint(appliedPlan)
+                placementController.setFootprint(footprintWalls, footprintMargin)
             } catch (_: Exception) {
                 failures += "generated room"
             }
@@ -250,6 +329,8 @@ fun HomeStage() {
                             attachedEnvironment.environment = AppEnvironment.ROOM
                         }
                         placementController.bind(nextRoom.navigationRoot)
+                        val (footprintWalls, footprintMargin) = localFootprint(appliedPlan)
+                        placementController.setFootprint(footprintWalls, footprintMargin)
                         if (selectedModelName != null) {
                             scope.launch { placementController.reloadSelection() }
                         }
@@ -365,6 +446,14 @@ fun HomeStage() {
                     onClearPlaced = {
                         placementController.clearPlaced()
                         placedCount = 0
+                    },
+                    aimStatus = aimStatus,
+                    onDropNow = {
+                        scope.launch {
+                            if (placementController.drop()) {
+                                placedCount = placementController.placedCount
+                            }
+                        }
                     },
                 )
             }
