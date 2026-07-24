@@ -75,6 +75,8 @@ private enum class SelectionKind {
 
 private data class PlanSelection(val kind: SelectionKind, val id: Int)
 
+private const val MAX_LISTED_MODELS = 6
+
 private data class PlanCanvasTransform(
     val size: Size,
     val centerX: Float,
@@ -111,6 +113,16 @@ internal fun FloorPlanExperiencePanel(
     onMoveInRoom: (deltaX: Float, deltaZ: Float) -> Unit,
     onResetRoomPosition: () -> Unit,
     onExpandedChange: (Boolean) -> Unit,
+    availableModels: List<LibraryModel>,
+    selectedModelName: String?,
+    placementActive: Boolean,
+    modelScale: Float,
+    placedCount: Int,
+    onScanModels: () -> Unit,
+    onModelSelected: (LibraryModel) -> Unit,
+    onPlacementActiveChange: (Boolean) -> Unit,
+    onModelScaleChange: (Float) -> Unit,
+    onClearPlaced: () -> Unit,
 ) {
     if (!expanded) {
         CompactEnvironmentPanel(
@@ -124,6 +136,9 @@ internal fun FloorPlanExperiencePanel(
             onMoveInRoom = onMoveInRoom,
             onResetRoomPosition = onResetRoomPosition,
             onEditPlan = { onExpandedChange(true) },
+            placementActive = placementActive,
+            selectedModelName = selectedModelName,
+            placedCount = placedCount,
         )
         return
     }
@@ -143,6 +158,16 @@ internal fun FloorPlanExperiencePanel(
         },
         onEnvironmentSelected = onEnvironmentSelected,
         onCollapse = { onExpandedChange(false) },
+        availableModels = availableModels,
+        selectedModelName = selectedModelName,
+        placementActive = placementActive,
+        modelScale = modelScale,
+        placedCount = placedCount,
+        onScanModels = onScanModels,
+        onModelSelected = onModelSelected,
+        onPlacementActiveChange = onPlacementActiveChange,
+        onModelScaleChange = onModelScaleChange,
+        onClearPlaced = onClearPlaced,
     )
 }
 
@@ -158,6 +183,9 @@ private fun CompactEnvironmentPanel(
     onMoveInRoom: (deltaX: Float, deltaZ: Float) -> Unit,
     onResetRoomPosition: () -> Unit,
     onEditPlan: () -> Unit,
+    placementActive: Boolean,
+    selectedModelName: String?,
+    placedCount: Int,
 ) {
     Column(
         modifier =
@@ -245,6 +273,16 @@ private fun CompactEnvironmentPanel(
             )
         }
         Spacer(Modifier.height(9.dp))
+        if (placementActive && selectedModelName != null) {
+            Text(
+                text =
+                    "Placing \"$selectedModelName\" ($placedCount dropped) — aim with the controller, click the trigger to drop.",
+                style = PicoTheme.typography.titleMedium,
+                fontSize = 13.sp,
+                color = Color(0x99000000),
+            )
+            Spacer(Modifier.height(6.dp))
+        }
         Text(
             text =
                 "Use these controls to explore. Emulator W/A/S/D moves the headset and triggers PICO's safeguard fade.",
@@ -267,12 +305,24 @@ private fun FloorPlanDesigner(
     onApplyPlan: () -> Unit,
     onEnvironmentSelected: (AppEnvironment) -> Unit,
     onCollapse: () -> Unit,
+    availableModels: List<LibraryModel>,
+    selectedModelName: String?,
+    placementActive: Boolean,
+    modelScale: Float,
+    placedCount: Int,
+    onScanModels: () -> Unit,
+    onModelSelected: (LibraryModel) -> Unit,
+    onPlacementActiveChange: (Boolean) -> Unit,
+    onModelScaleChange: (Float) -> Unit,
+    onClearPlaced: () -> Unit,
 ) {
     var mode by remember { mutableStateOf(DesignerMode.SELECT) }
     var selection by remember { mutableStateOf<PlanSelection?>(null) }
     var pendingWallStart by remember { mutableStateOf<PlanPoint?>(null) }
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     var canvasZoom by remember { mutableStateOf(1f) }
+    // Fixed reference bounds for stable view - initialized to demo plan's 15×8 bounds
+    var referenceBounds by remember { mutableStateOf(demoFloorPlan().bounds()) }
 
     fun changeMode(next: DesignerMode) {
         mode = next
@@ -368,7 +418,10 @@ private fun FloorPlanDesigner(
                         fractionDigits = 0,
                     )
                     Button(
-                        onClick = { canvasZoom = 1f },
+                        onClick = {
+                            canvasZoom = 1f
+                            referenceBounds = plan.bounds()
+                        },
                         size = ButtonDefaults.Small,
                         modifier = Modifier.width(110.dp),
                     ) {
@@ -389,6 +442,7 @@ private fun FloorPlanDesigner(
                     pendingWallStart = pendingWallStart,
                     canvasSize = canvasSize,
                     zoom = canvasZoom,
+                    referenceBounds = referenceBounds,
                     onCanvasSizeChange = { canvasSize = it },
                     onMoveConnectionPoint = { from, target ->
                         replacePlan(plan.moveConnectionPoint(from, target))
@@ -396,21 +450,13 @@ private fun FloorPlanDesigner(
                     onTap = { point ->
                         when (mode) {
                             DesignerMode.SELECT -> {
-                                selection = findSelection(plan, point, canvasSize, canvasZoom)
+                                selection = findSelection(plan, point, canvasSize, canvasZoom, referenceBounds)
                             }
                             DesignerMode.WALL -> {
                                 val snapped = point.snapped()
                                 val start = pendingWallStart
                                 if (start == null) {
-                                    // Starting a new wall is treated as creating a custom plan when
-                                    // the untouched 15 x 8 starter is still present. Otherwise the
-                                    // starter walls would be rebuilt together with the new room.
-                                    val planForNewWall =
-                                        plan.withoutUntouchedStarterForNewWall()
-                                    if (planForNewWall !== plan) {
-                                        replacePlan(planForNewWall)
-                                        selection = null
-                                    }
+                                    // Just start drawing - no auto-clear of demo plan
                                     pendingWallStart = snapped
                                 } else if (start.distanceTo(snapped) >= 0.2f) {
                                     val wall =
@@ -504,6 +550,17 @@ private fun FloorPlanDesigner(
                 },
                 applyEnabled = plan.walls.isNotEmpty(),
                 onApply = onApplyPlan,
+                roomAvailable = roomAvailable,
+                availableModels = availableModels,
+                selectedModelName = selectedModelName,
+                placementActive = placementActive,
+                modelScale = modelScale,
+                placedCount = placedCount,
+                onScanModels = onScanModels,
+                onModelSelected = onModelSelected,
+                onPlacementActiveChange = onPlacementActiveChange,
+                onModelScaleChange = onModelScaleChange,
+                onClearPlaced = onClearPlaced,
             )
         }
     }
@@ -517,14 +574,15 @@ private fun PlanCanvas(
     pendingWallStart: PlanPoint?,
     canvasSize: IntSize,
     zoom: Float,
+    referenceBounds: PlanBounds,
     onCanvasSizeChange: (IntSize) -> Unit,
     onMoveConnectionPoint: (PlanPoint, PlanPoint) -> Unit,
     onTap: (PlanPoint) -> Unit,
 ) {
     val fittedTransform =
-        remember(plan, canvasSize, zoom) {
+        remember(referenceBounds, canvasSize, zoom) {
             planCanvasTransform(
-                plan,
+                referenceBounds,
                 Size(canvasSize.width.toFloat(), canvasSize.height.toFloat()),
                 zoom,
             )
@@ -812,6 +870,17 @@ private fun Inspector(
     onClear: () -> Unit,
     applyEnabled: Boolean,
     onApply: () -> Unit,
+    roomAvailable: Boolean,
+    availableModels: List<LibraryModel>,
+    selectedModelName: String?,
+    placementActive: Boolean,
+    modelScale: Float,
+    placedCount: Int,
+    onScanModels: () -> Unit,
+    onModelSelected: (LibraryModel) -> Unit,
+    onPlacementActiveChange: (Boolean) -> Unit,
+    onModelScaleChange: (Float) -> Unit,
+    onClearPlaced: () -> Unit,
 ) {
     val wall =
         if (selection?.kind == SelectionKind.WALL) {
@@ -1086,6 +1155,94 @@ private fun Inspector(
         ) {
             Text("Apply & preview room")
         }
+
+        Spacer(Modifier.height(14.dp))
+        Text(
+            text = "Objects",
+            style = PicoTheme.typography.displaySmall,
+            fontSize = 21.sp,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = "Push .glb/.gltf/.usda/.usdz files to this app's files/models folder, then scan.",
+            style = PicoTheme.typography.titleMedium,
+            fontSize = 13.sp,
+            color = Color(0x99000000),
+        )
+        Spacer(Modifier.height(8.dp))
+        Button(
+            onClick = onScanModels,
+            size = ButtonDefaults.Small,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                if (availableModels.isEmpty()) {
+                    "Scan models folder"
+                } else {
+                    "Rescan (${availableModels.size} found)"
+                }
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        availableModels.take(MAX_LISTED_MODELS).forEach { model ->
+            EnvironmentButton(
+                label = model.displayName,
+                selected = model.displayName == selectedModelName,
+                enabled = roomAvailable,
+                onClick = { onModelSelected(model) },
+            )
+            Spacer(Modifier.height(6.dp))
+        }
+        if (availableModels.size > MAX_LISTED_MODELS) {
+            Text(
+                text = "…and ${availableModels.size - MAX_LISTED_MODELS} more (first $MAX_LISTED_MODELS shown)",
+                style = PicoTheme.typography.titleMedium,
+                fontSize = 12.sp,
+                color = Color(0x99000000),
+            )
+            Spacer(Modifier.height(6.dp))
+        }
+        if (selectedModelName != null) {
+            Button(
+                onClick = { onPlacementActiveChange(!placementActive) },
+                enabled = roomAvailable,
+                size = ButtonDefaults.Small,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (placementActive) "Placing: ON — stop" else "Placing: OFF — start")
+            }
+            Spacer(Modifier.height(8.dp))
+            DimensionField(
+                label = "Model scale",
+                value = modelScale * 100f,
+                step = 25f,
+                range = 5f..500f,
+                unit = "%",
+                fractionDigits = 0,
+                onChange = { value -> onModelScaleChange(value / 100f) },
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text =
+                    if (placementActive) {
+                        "Aim with the controller — the ghost shows the resting pose. Click the trigger to drop."
+                    } else {
+                        "Enable placing to aim and drop \"$selectedModelName\" with physics."
+                    },
+                style = PicoTheme.typography.titleMedium,
+                fontSize = 13.sp,
+                color = Color(0x99000000),
+            )
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = onClearPlaced,
+                enabled = placedCount > 0,
+                size = ButtonDefaults.Small,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Clear placed ($placedCount)")
+            }
+        }
     }
 }
 
@@ -1182,11 +1339,10 @@ private fun ModeButton(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 private fun planCanvasTransform(
-    plan: FloorPlan,
+    bounds: PlanBounds,
     size: Size,
     zoom: Float = 1f,
 ): PlanCanvasTransform {
-    val bounds = plan.bounds()
     val usableWidth = max(1f, size.width - 72f)
     val usableHeight = max(1f, size.height - 72f)
     val worldWidth = max(3f, bounds.width + 1.2f)
@@ -1206,10 +1362,11 @@ private fun findSelection(
     point: PlanPoint,
     canvasSize: IntSize,
     zoom: Float,
+    referenceBounds: PlanBounds,
 ): PlanSelection? {
     val transform =
         planCanvasTransform(
-            plan,
+            referenceBounds,
             Size(canvasSize.width.toFloat(), canvasSize.height.toFloat()),
             zoom,
         )

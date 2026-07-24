@@ -45,6 +45,35 @@ The APK declares an exported `MAIN` / `LAUNCHER` activity with the **PICO Room P
 high-contrast 1024×1024 room-plan fallback icon, and PICO spatial icon metadata. An installed build
 appears in the PICO application panel and resumes as a single Stage when launched.
 
+## Placing models with physics
+
+The room can be furnished with local 3D models (`.glb`, `.gltf`, `.usda`, `.usdc`, `.usdz`):
+
+1. Push model files into the app's models folder (no storage permission needed — it is the
+   app-specific external files directory):
+
+   ```powershell
+   adb push chair.glb /sdcard/Android/data/com.example.testfull/files/models/
+   ```
+
+2. In the expanded editor panel, open the **Objects** section and choose **Scan models folder**.
+3. Select a model. Placing mode switches on and a translucent **ghost preview** follows your
+   controller aim (in PICO Emulator the mouse drives the emulated controller; if no controller
+   reports, head gaze is used). The ghost shows the final resting pose: a physics ray-cast finds
+   your aim anchor on walls/floor, a second cast straight down finds the supporting surface —
+   floor or a previously dropped object, so models stack — and the model's pivot offset lifts it
+   onto that surface.
+4. **Click the trigger** to drop. The dropped copy is a dynamic `RigidBodyComponent` with a convex
+   collision shape, so it falls and settles under full physics against the room's static colliders.
+   Drop as many copies as you like; adjust **Model scale** (5–500%) before dropping.
+5. **Clear placed** removes every dropped object. Applying a rebuilt room also clears them (the
+   old room's entity tree owns them); the model selection survives and the ghost reloads against
+   the new room.
+
+The preview is a physics *query* (ray casts), not a live tumble simulation: it is exact for
+upright models landing on flat surfaces; objects dropped onto edges may tumble slightly after the
+drop. The drop itself is fully simulated.
+
 ## Build and deploy
 
 The project targets Android API 35, `arm64-v8a`, JDK/JBR 21, and PICO Spatial SDK 0.13.3.

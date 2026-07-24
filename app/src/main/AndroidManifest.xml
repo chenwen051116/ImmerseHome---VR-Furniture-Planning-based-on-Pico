@@ -44,7 +44,7 @@
              -->
             <meta-data
                 android:name="pico.spatial.stage.style"
-                android:value="3" />
+                android:value="1" />
 
             <!-- The immersion of a Progressive Stage at launch, only works when stage style is Progressive, range [0, 100], default value is 50 -->
             <meta-data

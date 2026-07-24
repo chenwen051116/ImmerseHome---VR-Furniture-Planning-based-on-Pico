@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "WebSearch"
+      "WebSearch",
+      "Bash(./gradlew.bat :app:compileDebugKotlin --quiet)"
     ]
   }
 }

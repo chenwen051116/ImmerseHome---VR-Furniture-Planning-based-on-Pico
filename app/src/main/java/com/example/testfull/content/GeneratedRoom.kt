@@ -25,7 +25,7 @@ import kotlin.math.min
 
 internal class GeneratedRoom(
     val root: Entity,
-    private val navigationRoot: Entity,
+    val navigationRoot: Entity,
     private val mesh: MeshResource,
     private val materials: List<Material>,
     private val collisionShapes: List<ShapeResource>,
