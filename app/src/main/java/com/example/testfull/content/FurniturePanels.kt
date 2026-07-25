@@ -2,8 +2,10 @@ package com.example.testfull.content
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -35,6 +37,14 @@ import com.pico.spatial.ui.foundation.material.backgroundMaterial
 import com.pico.spatial.ui.platform.Material
 
 private const val MAX_LISTED_MODELS = 8
+
+// Figma "AI Diagnosis Page--Reference" design tokens.
+private val AiAccent = Color(0xFFF5B942) // warm yellow — "the light left on at home"
+private val AiAccentDisabled = Color(0x33F5B942)
+private val AiCardBg = Color(0xCCFFF6E6) // cream-white card surface
+private val AiHint = Color(0x995A4632) // warm grey-brown muted text
+private val AiGlassFill = Color(0x3DFFFFFF) // frosted glass pill fill
+private val AiGlassBorder = Color(0x33FFFFFF) // 1px semi-transparent border
 
 private fun formatFileSize(bytes: Long): String =
     when {
@@ -263,11 +273,20 @@ internal fun AiArrangePanel(
     onApplyTextures: () -> Unit,
 ) {
     PanelFrame(width = 320.dp, height = 470.dp) {
-        PanelTitle("AI Arrange")
+        Text(
+            text = "AI Arrange",
+            style = PicoTheme.typography.displaySmall,
+            fontSize = 21.sp,
+            color = AiAccent,
+        )
         Spacer(Modifier.height(6.dp))
-        PanelHint(
-            "Describe the layout — the AI picks library models and places them with physics, " +
-                "replacing the furniture currently in the room."
+        Text(
+            text =
+                "Describe the layout — the AI picks library models and places them with physics, " +
+                    "replacing the furniture currently in the room.",
+            style = PicoTheme.typography.titleMedium,
+            fontSize = 13.sp,
+            color = AiHint,
         )
         Spacer(Modifier.height(8.dp))
         TextField(
@@ -281,68 +300,129 @@ internal fun AiArrangePanel(
         )
         Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
-                onClick = { onAiPromptChange("Cozy living room for movie night") },
-                size = ButtonDefaults.Small,
-            ) {
-                Text("Cozy")
+            AiChip("Cozy", roomAvailable && !aiBusy) {
+                onAiPromptChange("Cozy living room for movie night")
             }
-            Button(
-                onClick = { onAiPromptChange("Dining setup for two") },
-                size = ButtonDefaults.Small,
-            ) {
-                Text("Dining")
+            AiChip("Dining", roomAvailable && !aiBusy) {
+                onAiPromptChange("Dining setup for two")
             }
-            Button(
-                onClick = { onAiPromptChange("Study bedroom with a bed, a cabinet and a desk") },
-                size = ButtonDefaults.Small,
-            ) {
-                Text("Bedroom")
+            AiChip("Bedroom", roomAvailable && !aiBusy) {
+                onAiPromptChange("Study bedroom with a bed, a cabinet and a desk")
             }
         }
         Spacer(Modifier.height(8.dp))
-        Button(
-            onClick = onArrangeWithAi,
+        AiActionButton(
+            text = if (aiBusy) "AI arranging…" else "Arrange with AI",
             enabled = roomAvailable && !aiBusy && aiPrompt.isNotBlank(),
-            size = ButtonDefaults.Max,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(if (aiBusy) "AI arranging…" else "Arrange with AI")
-        }
+            onClick = onArrangeWithAi,
+        )
         if (aiStatus.isNotEmpty()) {
             Spacer(Modifier.height(6.dp))
-            PanelHint(aiStatus)
+            Text(
+                text = aiStatus,
+                style = PicoTheme.typography.titleMedium,
+                fontSize = 13.sp,
+                color = AiHint,
+            )
         }
 
         Spacer(Modifier.height(14.dp))
-        PanelTitle("Textures")
-        Spacer(Modifier.height(6.dp))
-        PanelHint("Reskin room surfaces. Applying rebuilds the room and clears placed furniture.")
-        if (availableTextures.isEmpty()) {
-            Spacer(Modifier.height(6.dp))
-            PanelHint("No textures found — push .png/.jpg files to the models folder, then scan.")
-        }
-        SurfaceSlot.entries.forEach { slot ->
-            TextureSlotRow(
-                label = slot.key.replaceFirstChar { it.uppercase() },
-                current = selectedTextures[slot],
-                options =
-                    listOf(null) +
-                        availableTextures
-                            .filter { it.surfaces.isEmpty() || slot in it.surfaces }
-                            .map { it.displayName },
-                enabled = roomAvailable,
-                onChange = { name -> onTextureSlotChange(slot, name) },
-            )
-        }
-        Spacer(Modifier.height(8.dp))
-        Button(
-            onClick = onApplyTextures,
-            enabled = roomAvailable && availableTextures.isNotEmpty(),
-            size = ButtonDefaults.Max,
-            modifier = Modifier.fillMaxWidth(),
+        // Textures section on a cream-white card.
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(AiCardBg)
+                    .padding(12.dp),
         ) {
-            Text("Apply textures (rebuild)")
+            Column {
+                Text(
+                    text = "Textures",
+                    style = PicoTheme.typography.displaySmall,
+                    fontSize = 19.sp,
+                    color = Color(0xFF3C2015),
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "Reskin room surfaces. Applying rebuilds the room and clears placed furniture.",
+                    style = PicoTheme.typography.titleMedium,
+                    fontSize = 13.sp,
+                    color = AiHint,
+                )
+                if (availableTextures.isEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "No textures found — push .png/.jpg files to the models folder, then scan.",
+                        style = PicoTheme.typography.titleMedium,
+                        fontSize = 13.sp,
+                        color = AiHint,
+                    )
+                }
+                SurfaceSlot.entries.forEach { slot ->
+                    TextureSlotRow(
+                        label = slot.key.replaceFirstChar { it.uppercase() },
+                        current = selectedTextures[slot],
+                        options =
+                            listOf(null) +
+                                availableTextures
+                                    .filter { it.surfaces.isEmpty() || slot in it.surfaces }
+                                    .map { it.displayName },
+                        enabled = roomAvailable,
+                        onChange = { name -> onTextureSlotChange(slot, name) },
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                AiActionButton(
+                    text = "Apply textures (rebuild)",
+                    enabled = roomAvailable && availableTextures.isNotEmpty(),
+                    onClick = onApplyTextures,
+                )
+            }
         }
+    }
+}
+
+/** Frosted-glass pill chip for AI preset prompts. */
+@Composable
+private fun AiChip(text: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier =
+            Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .background(if (enabled) AiGlassFill else Color(0x1AFFFFFF))
+                .border(1.dp, AiGlassBorder, RoundedCornerShape(8.dp))
+                .clickable(enabled = enabled, onClick = onClick)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = PicoTheme.typography.titleMedium,
+            fontSize = 14.sp,
+            color = if (enabled) Color(0xFFEEEEEE) else Color(0x66EEEEEE),
+        )
+    }
+}
+
+/** Warm-yellow accent action button for primary AI panel actions. */
+@Composable
+private fun AiActionButton(text: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .background(if (enabled) AiAccent else AiAccentDisabled)
+                .clickable(enabled = enabled, onClick = onClick)
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = PicoTheme.typography.titleMedium,
+            fontSize = 16.sp,
+            color = Color(0xFF3C2015),
+        )
     }
 }
