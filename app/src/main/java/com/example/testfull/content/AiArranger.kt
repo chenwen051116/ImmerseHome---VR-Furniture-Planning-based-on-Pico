@@ -18,7 +18,10 @@ private const val TAG = "AiArranger"
 private const val CONNECT_TIMEOUT_MS = 30_000
 
 /** Flagship models (gpt-5) can think for over a minute on a layout; allow it. */
-private const val READ_TIMEOUT_MS = 180_000
+private const val READ_TIMEOUT_MS = 300_000
+
+/** Read timeouts are usually relay-side congestion — one retry is cheap and often succeeds. */
+private const val MAX_HTTP_ATTEMPTS = 2
 
 private const val MIN_AI_SCALE = 0.05f
 private const val MAX_AI_SCALE = 5f
@@ -618,7 +621,20 @@ private fun wallBounds(walls: List<PlanWall>): PlanBounds {
     )
 }
 
-private suspend fun postChatCompletion(system: String, user: String): String =
+private suspend fun postChatCompletion(system: String, user: String): String {
+    var lastTimeout: java.net.SocketTimeoutException? = null
+    repeat(MAX_HTTP_ATTEMPTS) { attempt ->
+        try {
+            return postChatCompletionOnce(system, user)
+        } catch (error: java.net.SocketTimeoutException) {
+            lastTimeout = error
+            Log.w(TAG, "request timed out (attempt ${attempt + 1}/$MAX_HTTP_ATTEMPTS)")
+        }
+    }
+    throw AiArrangeException("AI service timed out twice — the relay is congested, try again")
+}
+
+private suspend fun postChatCompletionOnce(system: String, user: String): String =
     withContext(Dispatchers.IO) {
         val key = BuildConfig.AI_API_KEY
         if (key.isBlank()) {
@@ -669,6 +685,9 @@ private suspend fun postChatCompletion(system: String, user: String): String =
             Log.w(TAG, "AI answer: ${content.take(300)}")
             content
         } catch (error: AiArrangeException) {
+            throw error
+        } catch (error: java.net.SocketTimeoutException) {
+            // Let the outer retry loop decide; don't wrap it as a generic network error.
             throw error
         } catch (error: Exception) {
             Log.w(TAG, "request failed", error)
