@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "type": "surface_texture",
+  "identity": { "id": "white-frame-window", "name": "Framed window (4 panes)", "source": "generated in-project" },
+  "classification": { "surfaces": ["window"], "styles": ["modern", "nordic"] },
+  "maps": { "base_color": "white-frame-window.png", "normal": null },
+  "tiling": { "meters_per_tile": 1.4 },
+  "material": { "roughness": 0.1, "metallic": 0.0 },
+  "notes": "RGBA texture: opaque frame and muntins, ~15% alpha glass panes."
+}

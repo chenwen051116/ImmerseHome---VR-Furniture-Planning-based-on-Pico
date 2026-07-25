@@ -1,0 +1,254 @@
+﻿[SpatialPackPlugin]  Resolved Spatial SDK version from Version Catalog API: 0.13.3 in project app
+[SpatialPackPlugin]  [SpatialEditor] source skipped: spatial { spatialEditorDirectory } in build.gradle (not configured)
+[SpatialPackPlugin]  [SpatialEditor] using source = local.properties[spatial.tools.dir], value = D:\Pico Dev
+[SpatialPackPlugin]  [SpatialEditor] resolved home = D:\Pico Dev\0.13\editor/SpatialEditor
+[SpatialPackPlugin]  [SpatialEditor] validation passed
+[SpatialPackPlugin]  Resolved real Spatial Editor version: 0.13.4 from package.xml at D:\Pico Dev\0.13\editor\package.xml
+[SpatialPackPlugin]  Resolved Spatial SDK version from Version Catalog API: 0.13.3 in project editor-asset
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :app:generateDebugBuildConfig UP-TO-DATE
+> Task :editor-asset:preBuild
+> Task :editor-asset:preDebugBuild
+> Task :editor-asset:writeDebugAarMetadata UP-TO-DATE
+> Task :app:checkDebugAarMetadata UP-TO-DATE
+> Task :editor-asset:processDebugNavigationResources UP-TO-DATE
+> Task :app:processDebugNavigationResources UP-TO-DATE
+> Task :app:compileDebugNavigationResources UP-TO-DATE
+> Task :app:generateDebugResValues UP-TO-DATE
+> Task :editor-asset:generateDebugResValues UP-TO-DATE
+> Task :editor-asset:generateDebugResources UP-TO-DATE
+> Task :editor-asset:packageDebugResources UP-TO-DATE
+> Task :app:mapDebugSourceSetPaths UP-TO-DATE
+> Task :app:generateDebugResources UP-TO-DATE
+> Task :app:mergeDebugResources UP-TO-DATE
+> Task :app:packageDebugResources UP-TO-DATE
+> Task :app:parseDebugLocalResources UP-TO-DATE
+> Task :app:createDebugCompatibleScreenManifests UP-TO-DATE
+> Task :app:extractDeepLinksDebug UP-TO-DATE
+> Task :editor-asset:extractDeepLinksDebug UP-TO-DATE
+> Task :editor-asset:processDebugManifest UP-TO-DATE
+> Task :app:processDebugMainManifest UP-TO-DATE
+> Task :app:processDebugManifest UP-TO-DATE
+> Task :app:processDebugManifestForPackage UP-TO-DATE
+> Task :editor-asset:compileDebugLibraryResources UP-TO-DATE
+> Task :editor-asset:parseDebugLocalResources UP-TO-DATE
+> Task :editor-asset:generateDebugRFile UP-TO-DATE
+> Task :app:processDebugResources UP-TO-DATE
+> Task :editor-asset:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :editor-asset:compileDebugKotlin NO-SOURCE
+> Task :editor-asset:javaPreCompileDebug UP-TO-DATE
+> Task :editor-asset:compileDebugJavaWithJavac NO-SOURCE
+> Task :editor-asset:bundleLibCompileToJarDebug UP-TO-DATE
+> Task :app:javaPreCompileDebug UP-TO-DATE
+> Task :app:mergeDebugShaders UP-TO-DATE
+> Task :app:compileDebugShaders NO-SOURCE
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :editor-asset:mergeDebugShaders UP-TO-DATE
+> Task :editor-asset:compileDebugShaders NO-SOURCE
+> Task :editor-asset:generateDebugAssets UP-TO-DATE
+> Task :editor-asset:preReleaseBuild
+> Task :editor-asset:mergeReleaseShaders UP-TO-DATE
+> Task :editor-asset:compileReleaseShaders NO-SOURCE
+> Task :editor-asset:generateReleaseAssets UP-TO-DATE
+
+> Task :app:compileDebugKotlin
+gradlew.bat : e: java.nio.file.AccessDeniedException: C:\Users\Taven\AppData\Local\kotlin\daemon\kotlin-daemon-client-t
+smarker1134307249364726996.tmp
+At line:15 char:9077
++ ... \TestFull"; & .\gradlew.bat :app:assembleDebug --console=plain 2>&1 | ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (e: java.nio.fil...49364726996.tmp:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+e: Daemon compilation failed: Could not connect to Kotlin compile daemon
+java.lang.RuntimeException: Could not connect to Kotlin compile daemon
+	at org.jetbrains.kotlin.compilerRunner.GradleKotlinCompilerWork.compileWithDaemon(GradleKotlinCompilerWork.kt:214)
+	at org.jetbrains.kotlin.compilerRunner.GradleKotlinCompilerWork.compileWithDaemonOrFallbackImpl(GradleKotlinCompilerWo
+rk.kt:159)
+	at org.jetbrains.kotlin.compilerRunner.GradleKotlinCompilerWork.run(GradleKotlinCompilerWork.kt:111)
+	at org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction.execute(GradleCo
+mpilerRunnerWithWorkers.kt:76)
+	at org.gradle.workers.internal.DefaultWorkerServer.execute(DefaultWorkerServer.java:63)
+	at org.gradle.workers.internal.NoIsolationWorkerFactory$1$1.create(NoIsolationWorkerFactory.java:66)
+	at org.gradle.workers.internal.NoIsolationWorkerFactory$1$1.create(NoIsolationWorkerFactory.java:62)
+	at org.gradle.internal.classloader.ClassLoaderUtils.executeInClassloader(ClassLoaderUtils.java:100)
+	at org.gradle.workers.internal.NoIsolationWorkerFactory$1.lambda$execute$0(NoIsolationWorkerFactory.java:62)
+	at org.gradle.workers.internal.AbstractWorker$1.call(AbstractWorker.java:44)
+	at org.gradle.workers.internal.AbstractWorker$1.call(AbstractWorker.java:41)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperati
+onRunner.java:210)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperati
+onRunner.java:205)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:67)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:60)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:167)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:60)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:54)
+	at org.gradle.workers.internal.AbstractWorker.executeWrappedInBuildOperation(AbstractWorker.java:41)
+	at org.gradle.workers.internal.NoIsolationWorkerFactory$1.execute(NoIsolationWorkerFactory.java:59)
+	at org.gradle.workers.internal.DefaultWorkerExecutor.lambda$submitWork$0(DefaultWorkerExecutor.java:174)
+	at java.base/java.util.concurrent.FutureTask.run(Unknown Source)
+	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner.runExecution(DefaultConditionalExecutionQ
+ueue.java:194)
+	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner.access$700(DefaultConditionalExecutionQue
+ue.java:127)
+	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner$1.run(DefaultConditionalExecutionQueue.ja
+va:169)
+	at org.gradle.internal.Factories$1.create(Factories.java:31)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.withLocks(DefaultWorkerLeaseService.java:263)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.runAsWorkerThread(DefaultWorkerLeaseService.java:127)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.runAsWorkerThread(DefaultWorkerLeaseService.java:132)
+	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner.runBatch(DefaultConditionalExecutionQueue
+.java:164)
+	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner.run(DefaultConditionalExecutionQueue.java
+:133)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Unknown Source)
+	at java.base/java.util.concurrent.FutureTask.run(Unknown Source)
+	at org.gradle.internal.concurrent.ExecutorPolicy$CatchAndRecordFailures.onExecute(ExecutorPolicy.java:64)
+	at org.gradle.internal.concurrent.AbstractManagedExecutor$1.run(AbstractManagedExecutor.java:48)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(Unknown Source)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown Source)
+	at java.base/java.lang.Thread.run(Unknown Source)
+
+Failed to compile with Kotlin daemon: java.lang.RuntimeException: Could not connect to Kotlin compile daemon
+	at org.jetbrains.kotlin.compilerRunner.GradleKotlinCompilerWork.compileWithDaemon(GradleKotlinCompilerWork.kt:214)
+	at org.jetbrains.kotlin.compilerRunner.GradleKotlinCompilerWork.compileWithDaemonOrFallbackImpl(GradleKotlinCompilerWork.kt:159)
+	at org.jetbrains.kotlin.compilerRunner.GradleKotlinCompilerWork.run(GradleKotlinCompilerWork.kt:111)
+	at org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction.execute(GradleCompilerRunnerWithWorkers.kt:76)
+	at org.gradle.workers.internal.DefaultWorkerServer.execute(DefaultWorkerServer.java:63)
+	at org.gradle.workers.internal.NoIsolationWorkerFactory$1$1.create(NoIsolationWorkerFactory.java:66)
+	at org.gradle.workers.internal.NoIsolationWorkerFactory$1$1.create(NoIsolationWorkerFactory.java:62)
+	at org.gradle.internal.classloader.ClassLoaderUtils.executeInClassloader(ClassLoaderUtils.java:100)
+	at org.gradle.workers.internal.NoIsolationWorkerFactory$1.lambda$execute$0(NoIsolationWorkerFactory.java:62)
+	at org.gradle.workers.internal.AbstractWorker$1.call(AbstractWorker.java:44)
+	at org.gradle.workers.internal.AbstractWorker$1.call(AbstractWorker.java:41)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:210)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:205)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:67)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:60)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:167)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:60)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:54)
+	at org.gradle.workers.internal.AbstractWorker.executeWrappedInBuildOperation(AbstractWorker.java:41)
+	at org.gradle.workers.internal.NoIsolationWorkerFactory$1.execute(NoIsolationWorkerFactory.java:59)
+	at org.gradle.workers.internal.DefaultWorkerExecutor.lambda$submitWork$0(DefaultWorkerExecutor.java:174)
+	at java.base/java.util.concurrent.FutureTask.run(Unknown Source)
+	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner.runExecution(DefaultConditionalExecutionQueue.java:194)
+	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner.access$700(DefaultConditionalExecutionQueue.java:127)
+	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner$1.run(DefaultConditionalExecutionQueue.java:169)
+	at org.gradle.internal.Factories$1.create(Factories.java:31)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.withLocks(DefaultWorkerLeaseService.java:263)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.runAsWorkerThread(DefaultWorkerLeaseService.java:127)
+	at org.gradle.internal.work.DefaultWorkerLeaseService.runAsWorkerThread(DefaultWorkerLeaseService.java:132)
+	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner.runBatch(DefaultConditionalExecutionQueue.java:164)
+	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner.run(DefaultConditionalExecutionQueue.java:133)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Unknown Source)
+	at java.base/java.util.concurrent.FutureTask.run(Unknown Source)
+	at org.gradle.internal.concurrent.ExecutorPolicy$CatchAndRecordFailures.onExecute(ExecutorPolicy.java:64)
+	at org.gradle.internal.concurrent.AbstractManagedExecutor$1.run(AbstractManagedExecutor.java:48)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(Unknown Source)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown Source)
+	at java.base/java.lang.Thread.run(Unknown Source)
+Using fallback strategy: Compile without Kotlin daemon
+Try ./gradlew --stop if this issue persists
+If it does not look related to your configuration, please file an issue with logs to https://kotl.in/issue
+
+[SpatialPackPlugin]  
+[SpatialPack Progress] 0%: e[Ke[0m
+[SpatialPack Progress] 0%: Process additional textures...e[Ke[0m
+[SpatialPack Progress] 33%: Process additional textures...e[Ke[0m
+[SpatialPack Progress] 33%: Packaging model ./FloorPlan.usda...e[Ke[0mbuilding scene: D:/Pico Dev/TestFull/editor-asset/src/main/res3d/SpatialPackContent/Sources/Scenes/FloorPlan.usda
+
+> Task :editor-asset:spatial_pack_task
+[SpatialPackPlugin]  SpatialPackTask begin execute
+[SpatialPackPlugin]  [Pack] Using spatial bundle tool: true
+[SpatialPackPlugin]  [Pack] Using spatial tools version: 0.13
+[SpatialPackPlugin]  [Pack] Using spatial editor directory: (not set, fallback to local.properties / PICO_HOME)
+[SpatialPackPlugin]  [SpatialEditor] source skipped: spatial { spatialEditorDirectory } in build.gradle (not configured)
+[SpatialPackPlugin]  [SpatialEditor] using source = local.properties[spatial.tools.dir], value = D:\Pico Dev
+[SpatialPackPlugin]  [SpatialEditor] resolved home = D:\Pico Dev\0.13\editor/SpatialEditor
+[SpatialPackPlugin]  [SpatialEditor] validation passed
+[SpatialPackPlugin]  [Pack] Resolved binary list (useSpatialBundleTool=true): [D:\Pico Dev\0.13\editor\spatialbundle\spatialbundle.exe]
+[SpatialPackPlugin]  [Pack] Configured outDir: null
+[SpatialPackPlugin]  [Pack] Force build flag: true
+[SpatialPackPlugin]  [Pack] Use bundle incremental flag: false
+[SpatialPackPlugin]  [Pack] Include scenes: []
+[SpatialPackPlugin]  [Pack] Target bundle name: editor-asset
+[SpatialPackPlugin]  [Pack]begin pack editor-asset
+[SpatialPackPlugin]  [SpatialEditor] source skipped: spatial { spatialEditorDirectory } in build.gradle (not configured)
+[SpatialPackPlugin]  [SpatialEditor] using source = local.properties[spatial.tools.dir], value = D:\Pico Dev
+[SpatialPackPlugin]  [SpatialEditor] resolved home = D:\Pico Dev\0.13\editor/SpatialEditor
+[SpatialPackPlugin]  [SpatialEditor] validation passed
+[SpatialPackPlugin]  execute pack command ["D:\Pico Dev\0.13\editor\spatialbundle\spatialbundle.exe" pack -p "D:\Pico Dev\TestFull\editor-asset\src\main\res3d\SpatialPackContent" -s "D:\Pico Dev\TestFull\editor-asset\src\main\res3d\SpatialPackContent\Sources\Scenes" -o "D:\Pico Dev\TestFull\editor-asset\build\spatial\bundle\editor-asset.bundle" --formats usda --override-output --force-build]
+[SpatialPackPlugin]  Executing command: "D:\Pico Dev\0.13\editor\spatialbundle\spatialbundle.exe" pack -p "D:\Pico Dev\TestFull\editor-asset\src\main\res3d\SpatialPackContent" -s "D:\Pico Dev\TestFull\editor-asset\src\main\res3d\SpatialPackContent\Sources\Scenes" -o "D:\Pico Dev\TestFull\editor-asset\build\spatial\bundle\editor-asset.bundle" --formats usda --override-output --force-build
+[SpatialPackPlugin]  Starting spatialbundle process...
+[SpatialPackPlugin]  spatialbundle process started successfully (PID: unknown).
+
+[SpatialPackPlugin]  
+[SpatialPack Progress] 66%: Packaging model ./FloorPlan.usda...e[Ke[0m
+[SpatialPack Progress] 66%: Packaging model ./MyScene.usda...e[Ke[0mbuilding scene: D:/Pico Dev/TestFull/editor-asset/src/main/res3d/SpatialPackContent/Sources/Scenes/MyScene.usda
+[SpatialPackPlugin]  [2026-07-25 22:38:30.449437][Error][   32524][MaterialLinkComponent]Failed to get material texture path!
+[SpatialPackPlugin]  
+[SpatialPackPlugin]  [2026-07-25 22:38:30.472657][Warn ][   32524][ShadeNodeGraphResource]Only process resource listen event in main thread
+[SpatialPackPlugin]  
+[SpatialPackPlugin]  [2026-07-25 22:38:30.477154][Error][   32524][MaterialLinkComponent]Failed to get material texture path!
+[SpatialPackPlugin]  
+[SpatialPackPlugin]  [2026-07-25 22:38:30.477239][Warn ][   32524][ShadeNodeGraphResource]Only process resource listen event in main thread
+[SpatialPackPlugin]  
+[SpatialPackPlugin]  
+[SpatialPack Progress] 100%: Packaging model ./MyScene.usda...e[Ke[0m
+[SpatialPackPlugin]  e[32mThe bundle file has been output to D:/Pico Dev/TestFull/editor-asset/build/spatial/bundle/editor-asset.bundlee[0m
+[SpatialPackPlugin]  [pack] Elapsed time: 4713 ms
+
+> Task :editor-asset:spatial_pack_task
+[SpatialPackPlugin]  Command execute finished with exit code 0. Total cost: 25866 ms.
+[SpatialPackPlugin]  [Pack] Pack command exit code: 0
+[SpatialPackPlugin]  [Pack] Pack successful, bundle file generated at: D:\Pico Dev\TestFull\editor-asset\build\spatial\bundle\editor-asset.bundle
+[SpatialPackPlugin]  [Pack]pack editor-asset finish with out[D:\Pico Dev\TestFull\editor-asset\build/spatial/bundle/]
+[SpatialPackPlugin]  SpatialPackTask finish execute with cost 25890 ms
+
+> Task :editor-asset:mergeDebugAssets
+[SpatialPackPlugin]  BundleMergeFirst: editor-asset begin execute
+[SpatialPackPlugin] [Time] Action[BundleMergeFirst: editor-asset] cost 0 ms
+[SpatialPackPlugin]  BundleMerge: editor-asset begin execute
+[SpatialPackPlugin] [Time] Action[BundleMerge: editor-asset] cost 11 ms
+
+> Task :app:mergeDebugAssets
+> Task :editor-asset:processDebugJavaRes NO-SOURCE
+> Task :app:compressDebugAssets
+> Task :app:checkDebugDuplicateClasses UP-TO-DATE
+> Task :app:desugarDebugFileDependencies UP-TO-DATE
+> Task :app:mergeExtDexDebug UP-TO-DATE
+> Task :editor-asset:bundleLibRuntimeToDirDebug UP-TO-DATE
+> Task :app:mergeDebugJniLibFolders UP-TO-DATE
+> Task :editor-asset:mergeDebugJniLibFolders UP-TO-DATE
+> Task :editor-asset:mergeDebugNativeLibs NO-SOURCE
+> Task :app:mergeLibDexDebug UP-TO-DATE
+> Task :editor-asset:copyDebugJniLibsProjectOnly UP-TO-DATE
+> Task :app:mergeDebugNativeLibs UP-TO-DATE
+> Task :app:stripDebugDebugSymbols UP-TO-DATE
+> Task :app:validateSigningDebug UP-TO-DATE
+> Task :app:writeDebugAppMetadata UP-TO-DATE
+> Task :app:writeDebugSigningConfigVersions UP-TO-DATE
+> Task :app:compileDebugJavaWithJavac UP-TO-DATE
+> Task :app:processDebugJavaRes UP-TO-DATE
+> Task :app:mergeDebugJavaResource UP-TO-DATE
+> Task :app:dexBuilderDebug
+> Task :app:mergeProjectDexDebug
+> Task :app:packageDebug
+> Task :app:createDebugApkListingFileRedirect UP-TO-DATE
+> Task :app:assembleDebug
+
+[Incubating] Problems report is available at: file:///D:/Pico%20Dev/TestFull/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/8.13/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 54s
+58 actionable tasks: 9 executed, 49 up-to-date

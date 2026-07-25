@@ -1,0 +1,1335 @@
+{
+  "package_name": "AdventureX_AI_国学空间顾问",
+  "version": "1.0.0",
+  "language": "zh-CN",
+  "purpose": "用于户型与家具布局原型中的风水文化分析、解释、评分和可执行优化建议。",
+  "important_scope": {
+    "definition_of_guoxue_in_this_project": "本项目中的“国学”仅指中国传统宅居文化、空间礼序、形势关系、阴阳平衡与居住心理偏好，不等同于全部国学，也不包含未经用户明确选择的八字、命卦、择日或宿命预测。",
+    "product_positioning": "传统居住文化辅助决策系统，而非算命、医疗、法律或工程验收系统。",
+    "core_goal": "在安全合规、结构可行、生活功能、用户偏好、传统空间文化与审美之间寻找综合最优解。",
+    "non_goals": [
+      "不得预测财富、婚姻、健康、寿命、事业成败等现实结果。",
+      "不得把传统文化判断描述为科学定律或强制工程规范。",
+      "不得在缺少朝向、尺寸、门窗、家具坐标时编造信息。",
+      "不得建议拆改承重结构、消防设施、公共管线或其他不可变构件。"
+    ]
+  },
+  "recommended_architecture": {
+    "principle": "几何关系由程序计算，大模型负责综合解释、权衡、推荐与自然语言表达。",
+    "pipeline": [
+      {
+        "step": 1,
+        "name": "空间数据标准化",
+        "description": "将户型、门窗、房间、家具、朝向和用户偏好转换为结构化数据。"
+      },
+      {
+        "step": 2,
+        "name": "几何关系预计算",
+        "description": "程序计算相对位置、距离、视线、门扇碰撞、通道宽度、窗户遮挡、家具与梁柱重叠等事实。"
+      },
+      {
+        "step": 3,
+        "name": "规则匹配",
+        "description": "使用 rule_library 对事实进行 pass、warning、fail、unknown 判定。"
+      },
+      {
+        "step": 4,
+        "name": "大模型综合分析",
+        "description": "模型引用规则依据，结合用户风水重视程度、家庭成员、风格与预算输出解释和多套调整方案。"
+      },
+      {
+        "step": 5,
+        "name": "方案更新与重新评分",
+        "description": "用户移动或更换家具后重新运行几何检测与评分，不沿用旧结论。"
+      }
+    ]
+  },
+  "evidence_hierarchy": [
+    {
+      "level": "A",
+      "name": "国家强制性工程建设规范",
+      "authority": "最高",
+      "usage": "用于安全、基本功能、通行、采光、通风等底线判断；不得被风水偏好覆盖。"
+    },
+    {
+      "level": "B",
+      "name": "现代空间设计与人体工学原则",
+      "authority": "高",
+      "usage": "用于动线、尺度、私密、操作便利、视觉舒适与长期使用体验。"
+    },
+    {
+      "level": "C",
+      "name": "中国传统宅居文化与形势派原则",
+      "authority": "文化性",
+      "usage": "用于解释中国用户的居住心理与文化偏好，必须同时给出现代空间解释，不得宣称科学因果。"
+    },
+    {
+      "level": "D",
+      "name": "项目计算启发式阈值",
+      "authority": "工程实现约定",
+      "usage": "用于自动检测，必须标注为可配置项目阈值，不得冒充国家标准或古籍原文。"
+    }
+  ],
+  "reference_sources": [
+    {
+      "source_id": "GB55038_2025",
+      "title": "《住宅项目规范》GB 55038-2025",
+      "source_type": "国家强制性工程建设规范",
+      "status": "2025-05-01起实施",
+      "relevant_clauses": [
+        {
+          "clause": "2.2.7",
+          "meaning": "住宅建筑应满足居住所需的通风、日照、采光、隔声、防水、防潮、保温和隔热等性能要求。"
+        },
+        {
+          "clause": "4.1.13",
+          "meaning": "套内入口过道净宽不应小于1.10m；通往卧室、起居室的过道不应小于1.00m；通往厨房、卫生间、贮藏室的过道不应小于0.90m。"
+        },
+        {
+          "clause": "4.1.14",
+          "meaning": "对户门、卧室门、厨房门和卫生间门的通行净宽提出底线要求。"
+        },
+        {
+          "clause": "6.2.1",
+          "meaning": "每套住宅至少有一个卧室或起居室满足日照标准。"
+        },
+        {
+          "clause": "6.2.2",
+          "meaning": "卧室、起居室和厨房均应有直接采光。"
+        },
+        {
+          "clause": "6.3.3",
+          "meaning": "住宅应满足自然通风开口要求，卧室、起居室和厨房应能自然通风。"
+        }
+      ],
+      "usage_limit": "原型可据此进行辅助提醒，但不能替代注册建筑师、室内设计师或施工图审查。"
+    },
+    {
+      "source_id": "GB55019_2021",
+      "title": "《建筑与市政工程无障碍通用规范》GB 55019-2021",
+      "source_type": "国家强制性工程建设规范",
+      "status": "2022-04-01起实施",
+      "relevant_topics": [
+        "无障碍通行",
+        "安全使用",
+        "老年人、儿童及行动不便者的空间可达性"
+      ],
+      "usage_limit": "只有在输入包含老人、轮椅使用者、行动不便者等人群时，才提高无障碍权重；具体施工仍需查验完整现行规范。"
+    },
+    {
+      "source_id": "HUANGDI_ZHAIJING",
+      "title": "《黄帝宅经》",
+      "source_type": "传统宅居文化文献",
+      "evidence_level": "C",
+      "short_excerpt": "故宅者，人之本。人以宅为家，居若安……",
+      "project_interpretation": "住宅首先应使人安定、舒适、可居；在本项目中转化为安全感、私密性、秩序感、采光通风、动线与尺度协调。",
+      "usage_limit": "仅作为文化解释来源，不作为科学证明或工程强制标准；不使用吉凶宿命式结论。"
+    },
+    {
+      "source_id": "FORM_SCHOOL_GENERAL",
+      "title": "形势派宅居空间常用原则",
+      "source_type": "传统文化规则集合",
+      "evidence_level": "C",
+      "core_concepts": [
+        {
+          "concept": "有靠",
+          "project_interpretation": "主要长期停留位背后有稳定实体界面，减少背后穿行、突发干扰和漂浮感。"
+        },
+        {
+          "concept": "藏风聚气",
+          "project_interpretation": "避免入口、核心活动区和外部开口形成毫无遮挡的强直线关系；兼顾隐私、视线缓冲和空间层次。"
+        },
+        {
+          "concept": "明堂开阔",
+          "project_interpretation": "客厅、入户缓冲区或主要活动区应保持适当开敞、清晰和明亮，避免家具过密。"
+        },
+        {
+          "concept": "动静有序",
+          "project_interpretation": "会客、通行、厨房等动态空间与睡眠、阅读等安静空间减少相互干扰。"
+        },
+        {
+          "concept": "阴阳平衡",
+          "project_interpretation": "在明暗、开合、动静、冷暖、实体与留白之间取得适度平衡，不机械套用方位吉凶。"
+        }
+      ],
+      "usage_limit": "每次引用必须同时给出可观察的空间事实和现代设计解释。"
+    }
+  ],
+  "conflict_resolution": {
+    "priority_order": [
+      "人身安全与强制规范",
+      "结构、消防、门窗和固定管线等不可变约束",
+      "基本功能、通行、采光、通风与无障碍",
+      "用户明确需求与家庭成员特征",
+      "传统宅居文化偏好",
+      "风格与视觉美学"
+    ],
+    "rules": [
+      "若风水建议与安全、消防、承重、通风或通行冲突，必须放弃风水建议。",
+      "若传统文化规则与用户明确需求冲突，提供主方案和折中方案，不替用户做绝对决定。",
+      "不得通过家具遮挡消防、门窗、设备检修口或主要逃生通道。",
+      "没有足够数据时返回 unknown，不得使用常识补全具体方位和尺寸。"
+    ]
+  },
+  "project_detection_thresholds": {
+    "note": "以下均为项目可配置启发式阈值，不是国家标准或古籍原文。",
+    "direct_alignment_angle_deg": 15,
+    "direct_alignment_max_distance_mm": 8000,
+    "back_support_max_gap_mm": 300,
+    "main_furniture_path_preferred_min_mm": 900,
+    "secondary_furniture_path_preferred_min_mm": 750,
+    "beam_overlap_warning_ratio": 0.2,
+    "entrance_privacy_buffer_preferred_mm": 900,
+    "furniture_window_blockage_warning_ratio": 0.25,
+    "sharp_corner_target_angle_deg": 20
+  },
+  "rule_library": [
+    {
+      "rule_id": "FS-ENT-001",
+      "name": "入户直见私密空间",
+      "category": "传统文化+隐私",
+      "applies_when": "入户门开启后，可无遮挡直视床、坐便器、淋浴区或卧室核心区域。",
+      "geometry_detection": {
+        "required_relations": [
+          "entrance_door.line_of_sight",
+          "private_object.visibility_ratio",
+          "distance_mm"
+        ],
+        "default_condition": "visibility_ratio >= 0.5"
+      },
+      "cultural_basis": {
+        "concept": "入户宜有缓冲、内外有序",
+        "source_ids": [
+          "FORM_SCHOOL_GENERAL"
+        ]
+      },
+      "modern_basis": "降低隐私暴露，改善由公共到私密空间的过渡层次。",
+      "severity": "high",
+      "recommended_actions": [
+        "调整床或卫生间可见面的朝向。",
+        "增加不阻塞通道的玄关柜、格栅、屏风或半高隔断。",
+        "无法遮挡时，利用转向、磨砂材质、帘体或局部视线屏蔽。"
+      ]
+    },
+    {
+      "rule_id": "FS-ENT-002",
+      "name": "入户与阳台或大窗形成强直线贯通",
+      "category": "传统文化+空间层次",
+      "applies_when": "入户中心线与阳台门或大面积外窗近似共线，且中间缺少功能节点或视觉缓冲。",
+      "geometry_detection": {
+        "required_relations": [
+          "entrance_to_exterior_opening.angle_deg",
+          "line_of_sight_clear",
+          "distance_mm"
+        ],
+        "default_condition": "angle_deg <= 15 and line_of_sight_clear == true"
+      },
+      "cultural_basis": {
+        "concept": "藏风聚气",
+        "source_ids": [
+          "FORM_SCHOOL_GENERAL"
+        ]
+      },
+      "modern_basis": "改善入户第一视角、隐私、空间停顿和层次；同时避免把所有视觉注意力立即拉向单一出口。",
+      "severity": "medium",
+      "recommended_actions": [
+        "设置通透但有层次的玄关节点。",
+        "用沙发、地毯、边柜或灯光形成视觉停顿，不应堵塞主通道。",
+        "若空间狭小，只做低干预软装缓冲，不强行封闭。"
+      ]
+    },
+    {
+      "rule_id": "FS-SEAT-001",
+      "name": "沙发或主要座位背后无靠",
+      "category": "传统文化+安全感",
+      "applies_when": "沙发主座背后为主要通道、门、落地窗或大面积空区，且距离稳定实体界面超过项目阈值。",
+      "geometry_detection": {
+        "required_relations": [
+          "seat.back_to_solid_surface_distance_mm",
+          "backside_traffic_frequency",
+          "backside_opening_type"
+        ],
+        "default_condition": "distance_mm > 300 or backside_traffic_frequency == 'high'"
+      },
+      "cultural_basis": {
+        "concept": "有靠",
+        "source_ids": [
+          "FORM_SCHOOL_GENERAL"
+        ]
+      },
+      "modern_basis": "减少背后频繁穿行和突发干扰，提升主座稳定感，同时便于形成明确会客中心。",
+      "severity": "medium",
+      "recommended_actions": [
+        "优先让沙发靠实体墙或稳定柜体。",
+        "无法靠墙时，在背后设置窄边柜、矮柜或低密度屏风形成心理边界。",
+        "不得为了“有靠”压缩主要通道至不合理宽度。"
+      ]
+    },
+    {
+      "rule_id": "FS-BED-001",
+      "name": "床头缺少稳定支撑",
+      "category": "传统文化+睡眠空间",
+      "applies_when": "床头位于窗下、门洞处、主要通道侧或远离稳定墙体。",
+      "geometry_detection": {
+        "required_relations": [
+          "bed.head_to_solid_wall_distance_mm",
+          "bed.head_overlaps_window",
+          "traffic_behind_head"
+        ],
+        "default_condition": "head_to_solid_wall_distance_mm > 300 or bed.head_overlaps_window == true"
+      },
+      "cultural_basis": {
+        "concept": "床头有靠",
+        "source_ids": [
+          "FORM_SCHOOL_GENERAL"
+        ]
+      },
+      "modern_basis": "减少头部后方的光、风、噪声和人员走动干扰，增强休息区稳定性。",
+      "severity": "high",
+      "recommended_actions": [
+        "将床头调整至完整实体墙。",
+        "无法移动时，增加稳固高靠背并优化遮光、隔音与窗帘。",
+        "不可遮挡必要窗扇开启和自然通风。"
+      ]
+    },
+    {
+      "rule_id": "FS-BED-002",
+      "name": "床与房门正对",
+      "category": "传统文化+私密",
+      "applies_when": "房门开启视线与床中心或床头区域近似共线，且床大面积暴露。",
+      "geometry_detection": {
+        "required_relations": [
+          "door_to_bed.angle_deg",
+          "bed.visibility_ratio_from_door",
+          "distance_mm"
+        ],
+        "default_condition": "angle_deg <= 15 and visibility_ratio >= 0.5"
+      },
+      "cultural_basis": {
+        "concept": "门床避免直冲",
+        "source_ids": [
+          "FORM_SCHOOL_GENERAL"
+        ]
+      },
+      "modern_basis": "降低开门瞬间的视线暴露和惊扰，提升卧室私密与心理安全。",
+      "severity": "high",
+      "recommended_actions": [
+        "优先旋转或横移床位，避免床头和床中心处于门的直线视域。",
+        "空间不足时，用床尾凳、低柜或局部隔断形成缓冲。",
+        "不得因调整造成衣柜无法开启或通道不足。"
+      ]
+    },
+    {
+      "rule_id": "FS-BED-003",
+      "name": "床或长期座位受梁体压迫",
+      "category": "传统文化+视觉舒适",
+      "applies_when": "可见梁体在水平投影上明显覆盖床、沙发主座或书桌长期停留区。",
+      "geometry_detection": {
+        "required_relations": [
+          "beam_overlap_ratio",
+          "beam_bottom_height_mm",
+          "occupancy_duration"
+        ],
+        "default_condition": "beam_overlap_ratio >= 0.2 and occupancy_duration == 'long'"
+      },
+      "cultural_basis": {
+        "concept": "避免梁压",
+        "source_ids": [
+          "FORM_SCHOOL_GENERAL"
+        ]
+      },
+      "modern_basis": "避免头顶局部压低形成明显压迫感；低净高还可能影响灯光与活动舒适度。",
+      "severity": "medium",
+      "recommended_actions": [
+        "移动床、沙发或书桌，使长期停留区避开梁体投影。",
+        "无法移动时，用整体平顶、灯光和色彩弱化高差，但不得违规改动结构。",
+        "若净高不确定，结论标记为 unknown 并请求尺寸。"
+      ]
+    },
+    {
+      "rule_id": "FS-MIR-001",
+      "name": "镜面直接映照床或入户核心视线",
+      "category": "传统文化+视觉干扰",
+      "applies_when": "用户躺卧或进入空间时，镜面能直接映出床或产生强烈人影反射。",
+      "geometry_detection": {
+        "required_relations": [
+          "mirror_visible_from_bed_eye_points",
+          "mirror_visible_from_entrance",
+          "mirror_area_m2"
+        ],
+        "default_condition": "mirror_visible_from_bed_eye_points == true"
+      },
+      "cultural_basis": {
+        "concept": "镜面宜谨慎设置",
+        "source_ids": [
+          "FORM_SCHOOL_GENERAL"
+        ]
+      },
+      "modern_basis": "夜间、弱光或突然进入空间时，大面积动态反射可能造成视觉干扰；同时影响卧室安静感。",
+      "severity": "low",
+      "recommended_actions": [
+        "改变镜面角度或移至柜门内侧。",
+        "使用可关闭镜门、帘体或低反射材质。",
+        "用户不在意时可降低权重，不作为硬性否决项。"
+      ]
+    },
+    {
+      "rule_id": "FS-DESK-001",
+      "name": "书桌背门或背后为高频通道",
+      "category": "传统文化+专注体验",
+      "applies_when": "坐姿朝向使使用者完全背对房门，且背后存在高频人员通行。",
+      "geometry_detection": {
+        "required_relations": [
+          "desk_user_facing_vector",
+          "door_position",
+          "backside_traffic_frequency"
+        ],
+        "default_condition": "door_is_behind_user == true and backside_traffic_frequency == 'high'"
+      },
+      "cultural_basis": {
+        "concept": "坐位有靠、可知来向",
+        "source_ids": [
+          "FORM_SCHOOL_GENERAL"
+        ]
+      },
+      "modern_basis": "减少背后走动带来的分心和突发惊扰，同时兼顾屏幕隐私。",
+      "severity": "medium",
+      "recommended_actions": [
+        "调整桌面方向，使门位于侧前方可感知范围。",
+        "无法改变方向时，增加低矮边界或减少背后通行。",
+        "优先保证自然光不直射屏幕和正常座椅后退空间。"
+      ]
+    },
+    {
+      "rule_id": "FS-KIT-001",
+      "name": "灶台与水槽关系不协调",
+      "category": "传统文化+厨房操作",
+      "applies_when": "灶台与水槽过近、直接相对，或操作时存在水汽、热源、转身和碰撞干扰。",
+      "geometry_detection": {
+        "required_relations": [
+          "stove_to_sink_distance_mm",
+          "stove_sink_relative_orientation",
+          "counter_continuity",
+          "aisle_width_mm"
+        ],
+        "default_condition": "distance_mm is not null and distance_mm < project_config.kitchen_stove_sink_preferred_distance_mm"
+      },
+      "cultural_basis": {
+        "concept": "水火关系协调",
+        "source_ids": [
+          "FORM_SCHOOL_GENERAL"
+        ]
+      },
+      "modern_basis": "减少水汽与明火、电器、热锅操作相互干扰，改善备餐流程和操作安全。",
+      "severity": "medium",
+      "recommended_actions": [
+        "在水槽与灶台之间保留连续备餐台面。",
+        "避免灶台与水槽在狭窄通道两侧正面对冲。",
+        "具体安全距离应根据设备说明、燃气规范和项目设计确定，模型不得编造强制数值。"
+      ]
+    },
+    {
+      "rule_id": "FS-BATH-001",
+      "name": "卫生间门直对入户、餐桌或床",
+      "category": "传统文化+卫生私密",
+      "applies_when": "卫生间门开启后直接进入入户、餐桌或床的主要视线。",
+      "geometry_detection": {
+        "required_relations": [
+          "bathroom_door_line_of_sight",
+          "target_visibility_ratio",
+          "distance_mm"
+        ],
+        "default_condition": "target_visibility_ratio >= 0.5"
+      },
+      "cultural_basis": {
+        "concept": "洁污有别、内外有序",
+        "source_ids": [
+          "FORM_SCHOOL_GENERAL"
+        ]
+      },
+      "modern_basis": "改善私密、气味控制、用餐体验和空间观感。",
+      "severity": "medium",
+      "recommended_actions": [
+        "调整门的开向或设置局部视觉缓冲。",
+        "使用干湿分区、良好排风和闭门策略。",
+        "户型无法改变时，通过柜体、格栅或绿植弱化直接视线。"
+      ]
+    },
+    {
+      "rule_id": "FS-CIR-001",
+      "name": "主要通行受阻",
+      "category": "强制规范+功能",
+      "applies_when": "固定过道或家具布置后的主要路径净宽不足、门扇碰撞或存在死角。",
+      "geometry_detection": {
+        "required_relations": [
+          "path_clear_width_mm",
+          "path_type",
+          "door_swing_collision",
+          "furniture_collision"
+        ],
+        "default_condition": "path_clear_width_mm < applicable_threshold or door_swing_collision == true"
+      },
+      "reference_basis": {
+        "source_ids": [
+          "GB55038_2025"
+        ],
+        "clauses": [
+          "4.1.13",
+          "4.1.14"
+        ]
+      },
+      "modern_basis": "保证基本通行、搬运、日常使用和紧急情况下的可达性。",
+      "severity": "critical",
+      "recommended_actions": [
+        "缩小、替换或移动造成阻挡的家具。",
+        "检查柜门、房门、抽屉和椅子使用状态下的动态占用。",
+        "固定套内过道按适用国家规范判断；家具间净距使用项目偏好值时必须注明是启发式。"
+      ]
+    },
+    {
+      "rule_id": "FS-LIGHT-001",
+      "name": "家具遮挡直接采光",
+      "category": "强制规范+舒适",
+      "applies_when": "高柜、隔断或大型家具明显遮挡卧室、起居室或厨房的主要采光窗。",
+      "geometry_detection": {
+        "required_relations": [
+          "window_blockage_ratio",
+          "room_type",
+          "window_is_primary_daylight_source"
+        ],
+        "default_condition": "window_blockage_ratio >= 0.25 and window_is_primary_daylight_source == true"
+      },
+      "reference_basis": {
+        "source_ids": [
+          "GB55038_2025"
+        ],
+        "clauses": [
+          "2.2.7",
+          "6.2.1",
+          "6.2.2"
+        ]
+      },
+      "cultural_basis": {
+        "concept": "明暗有度、明堂宜明",
+        "source_ids": [
+          "FORM_SCHOOL_GENERAL"
+        ]
+      },
+      "modern_basis": "维护自然采光、空间明亮度和昼夜节律体验。",
+      "severity": "high",
+      "recommended_actions": [
+        "降低靠窗家具高度或移出主要采光投影。",
+        "采用通透隔断而非封闭高柜。",
+        "不得仅用人工灯光替代必须满足的直接采光条件。"
+      ]
+    },
+    {
+      "rule_id": "FS-VENT-001",
+      "name": "自然通风路径受阻",
+      "category": "强制规范+舒适",
+      "applies_when": "家具或隔断影响可开启窗、阳台门及主要空气流通路径。",
+      "geometry_detection": {
+        "required_relations": [
+          "openable_window_clearance",
+          "ventilation_path_obstruction_ratio",
+          "room_type"
+        ],
+        "default_condition": "openable_window_clearance == false or ventilation_path_obstruction_ratio >= 0.3"
+      },
+      "reference_basis": {
+        "source_ids": [
+          "GB55038_2025"
+        ],
+        "clauses": [
+          "2.2.7",
+          "6.3.3"
+        ]
+      },
+      "cultural_basis": {
+        "concept": "气流宜通而不宜强直冲",
+        "source_ids": [
+          "FORM_SCHOOL_GENERAL"
+        ]
+      },
+      "modern_basis": "保证开窗操作、空气交换和湿热环境控制。",
+      "severity": "high",
+      "recommended_actions": [
+        "移除阻挡可开启窗扇的家具。",
+        "保留可维护、可操作的窗边区域。",
+        "区分“空气流通”与“入口到窗口强直线暴露”，不要机械地认为越通越好或越封闭越好。"
+      ]
+    },
+    {
+      "rule_id": "FS-SHARP-001",
+      "name": "尖锐家具角指向长期停留位",
+      "category": "传统文化+物理安全",
+      "applies_when": "尖锐桌角、柜角或突出构件朝向床、沙发主座或主要通道，且距离较近。",
+      "geometry_detection": {
+        "required_relations": [
+          "corner_target_angle_deg",
+          "corner_to_target_distance_mm",
+          "corner_radius_mm",
+          "target_occupancy_duration"
+        ],
+        "default_condition": "corner_target_angle_deg <= 20 and target_occupancy_duration == 'long'"
+      },
+      "cultural_basis": {
+        "concept": "避免尖角冲射",
+        "source_ids": [
+          "FORM_SCHOOL_GENERAL"
+        ]
+      },
+      "modern_basis": "降低碰撞风险与持续视觉锐利感，儿童和老人家庭应提高优先级。",
+      "severity": "medium",
+      "recommended_actions": [
+        "旋转或移动家具，使尖角避开座位和通道。",
+        "使用圆角、倒角或软包防护。",
+        "只有在距离和朝向同时构成明显问题时才提示，避免过度报警。"
+      ]
+    },
+    {
+      "rule_id": "FS-ZONE-001",
+      "name": "动静分区互相干扰",
+      "category": "传统文化+功能",
+      "applies_when": "卧室、阅读区紧邻高频会客、影音、厨房或主要通道，且缺少隔声或缓冲。",
+      "geometry_detection": {
+        "required_relations": [
+          "quiet_zone_adjacent_dynamic_zone",
+          "estimated_noise_level",
+          "buffer_present",
+          "traffic_frequency"
+        ],
+        "default_condition": "quiet_zone_adjacent_dynamic_zone == true and buffer_present == false"
+      },
+      "cultural_basis": {
+        "concept": "动静有序",
+        "source_ids": [
+          "FORM_SCHOOL_GENERAL"
+        ]
+      },
+      "modern_basis": "减少睡眠、学习和工作被高频活动打断。",
+      "severity": "medium",
+      "recommended_actions": [
+        "用收纳、过厅、走道或软装形成缓冲。",
+        "调整影音设备和高频活动家具朝向。",
+        "空间无法调整时，加强门体、墙面和软装吸声。"
+      ]
+    },
+    {
+      "rule_id": "FS-SCALE-001",
+      "name": "家具尺度造成空间拥堵",
+      "category": "功能+美学",
+      "applies_when": "家具占地、开合和使用包络显著压缩通道、采光或活动区。",
+      "geometry_detection": {
+        "required_relations": [
+          "furniture_occupancy_ratio",
+          "usable_free_area_ratio",
+          "dynamic_clearance_conflicts",
+          "room_type"
+        ],
+        "default_condition": "dynamic_clearance_conflicts > 0 or usable_free_area_ratio < project_config.room_free_area_preferred_ratio"
+      },
+      "cultural_basis": {
+        "concept": "虚实相生、明堂开阔",
+        "source_ids": [
+          "FORM_SCHOOL_GENERAL"
+        ]
+      },
+      "modern_basis": "保留活动、视线和留白，避免房间看似豪华但难以使用。",
+      "severity": "medium",
+      "recommended_actions": [
+        "优先替换为更合适尺寸或模块化家具。",
+        "减少重复功能家具。",
+        "在不牺牲通行与采光的前提下完成风格表达。"
+      ]
+    }
+  ],
+  "runtime_project_config": {
+    "kitchen_stove_sink_preferred_distance_mm": 600,
+    "room_free_area_preferred_ratio": 0.35,
+    "note": "这两个默认值属于项目体验阈值，应允许设计师按户型、设备说明和目标用户修改。"
+  },
+  "scoring_model": {
+    "score_range": [
+      0,
+      100
+    ],
+    "compliance_gate": {
+      "rule": "存在 critical 且状态为 fail 的强制规范或人身安全问题时，方案不得标记为 recommended，overall_score 最高为59。",
+      "unknown_rule": "关键尺寸缺失时不扣成失败分，而是降低 confidence_score 并要求补充数据。"
+    },
+    "weight_profiles": {
+      "fengshui_high": {
+        "safety_and_compliance": 30,
+        "function_and_access": 20,
+        "cultural_fengshui": 25,
+        "comfort_privacy_light_ventilation": 15,
+        "aesthetics_and_style": 10
+      },
+      "fengshui_medium": {
+        "safety_and_compliance": 30,
+        "function_and_access": 25,
+        "cultural_fengshui": 20,
+        "comfort_privacy_light_ventilation": 15,
+        "aesthetics_and_style": 10
+      },
+      "fengshui_low": {
+        "safety_and_compliance": 30,
+        "function_and_access": 30,
+        "cultural_fengshui": 10,
+        "comfort_privacy_light_ventilation": 20,
+        "aesthetics_and_style": 10
+      }
+    },
+    "severity_penalties": {
+      "critical": 25,
+      "high": 12,
+      "medium": 6,
+      "low": 2
+    },
+    "deduplication": "同一几何事实触发多个规则时合并为一个问题，在 evidence_trace 中保留多条依据，避免重复扣分。",
+    "recommendation_ranking": [
+      "先处理 critical",
+      "再处理 high",
+      "优先选择一次调整可同时改善多个维度的动作",
+      "在收益接近时选择成本低、改动小、可逆性高的方案"
+    ]
+  },
+  "system_prompt": "你是“AI国学空间顾问”，负责分析住宅户型和家具布局。你必须把本项目中的国学限定为中国传统宅居文化、空间礼序、形势关系、阴阳平衡与居住心理偏好。你不是算命师，不得预测财富、健康、婚姻、事业或命运。你必须优先遵守国家强制性规范、安全、结构、消防、采光、通风、通行和无障碍要求；传统风水偏好不得覆盖这些底线。每个结论必须包含：可观察空间事实、引用规则ID、依据等级、传统文化解释、现代设计解释、可执行建议、替代方案、置信度和缺失数据。未提供朝向、尺寸、门窗、家具坐标时必须返回unknown，不得编造。你只能使用输入数据、程序预计算关系、reference_sources与rule_library。输出必须严格符合output_schema，不得输出JSON之外的文字。",
+  "runtime_user_prompt_template": {
+    "instruction": "请分析下面的住宅布局。先校验输入完整性，再匹配规则，最后输出综合评分、证据链和可执行调整方案。",
+    "layout_data_placeholder": "{{LAYOUT_JSON}}",
+    "user_profile_placeholder": "{{USER_PROFILE_JSON}}",
+    "precomputed_relations_placeholder": "{{RELATIONS_JSON}}",
+    "candidate_layout_id_placeholder": "{{LAYOUT_ID}}"
+  },
+  "input_schema": {
+    "layout_id": "string",
+    "unit": "mm",
+    "north_angle_deg": "number|null",
+    "rooms": [
+      {
+        "room_id": "string",
+        "type": "entrance|living_room|dining_room|bedroom|study|kitchen|bathroom|balcony|storage|corridor|other",
+        "polygon": "[[x,y],...]",
+        "height_mm": "number|null",
+        "usage": "string|null"
+      }
+    ],
+    "openings": [
+      {
+        "opening_id": "string",
+        "type": "door|window|balcony_door",
+        "room_ids": [
+          "string"
+        ],
+        "position": "[x,y]",
+        "width_mm": "number|null",
+        "openable": "boolean|null",
+        "swing_direction": "string|null"
+      }
+    ],
+    "fixed_elements": [
+      {
+        "element_id": "string",
+        "type": "wall|column|beam|pipe|equipment|other",
+        "geometry": "object",
+        "modifiable": "boolean"
+      }
+    ],
+    "furniture": [
+      {
+        "furniture_id": "string",
+        "type": "sofa|bed|desk|dining_table|chair|wardrobe|cabinet|mirror|stove|sink|toilet|other",
+        "position": "[x,y,z]",
+        "rotation_deg": "number",
+        "bounding_box_mm": "[width,depth,height]",
+        "movable": "boolean",
+        "style_tags": [
+          "string"
+        ]
+      }
+    ],
+    "user_profile": {
+      "resident_count": "number",
+      "family_members": [
+        "adult|child|elderly|pet|wheelchair_user|other"
+      ],
+      "style_preference": [
+        "string"
+      ],
+      "fengshui_importance": "high|medium|low",
+      "function_priority": [
+        "string"
+      ],
+      "privacy_priority": "high|medium|low",
+      "budget_level": "high|medium|low|null",
+      "explicit_taboo_preferences": [
+        "string"
+      ]
+    },
+    "precomputed_relations": [
+      {
+        "relation_type": "string",
+        "source_id": "string",
+        "target_id": "string",
+        "measurements": "object"
+      }
+    ]
+  },
+  "output_schema": {
+    "layout_id": "string",
+    "analysis_status": "complete|partial|insufficient_data",
+    "is_recommended": "boolean",
+    "summary": "string",
+    "scores": {
+      "safety_and_compliance": "0-100",
+      "function_and_access": "0-100",
+      "cultural_fengshui": "0-100",
+      "comfort_privacy_light_ventilation": "0-100",
+      "aesthetics_and_style": "0-100",
+      "overall": "0-100",
+      "confidence": "0-100"
+    },
+    "strengths": [
+      {
+        "title": "string",
+        "observable_fact": "string",
+        "rule_ids": [
+          "string"
+        ],
+        "reason": "string"
+      }
+    ],
+    "issues": [
+      {
+        "issue_id": "string",
+        "status": "fail|warning|unknown",
+        "severity": "critical|high|medium|low",
+        "space_ids": [
+          "string"
+        ],
+        "object_ids": [
+          "string"
+        ],
+        "title": "string",
+        "observable_fact": "string",
+        "rule_ids": [
+          "string"
+        ],
+        "evidence_trace": [
+          {
+            "source_id": "string",
+            "evidence_level": "A|B|C|D",
+            "clause_or_concept": "string",
+            "usage_note": "string"
+          }
+        ],
+        "cultural_interpretation": "string",
+        "modern_design_interpretation": "string",
+        "user_relevance": "string",
+        "confidence": "0-1",
+        "missing_data": [
+          "string"
+        ]
+      }
+    ],
+    "recommendations": [
+      {
+        "recommendation_id": "string",
+        "priority": "P0|P1|P2|P3",
+        "related_issue_ids": [
+          "string"
+        ],
+        "action_type": "move|rotate|replace|resize|add_buffer|change_material|change_lighting|retain",
+        "target_object_ids": [
+          "string"
+        ],
+        "action": "string",
+        "geometry_parameters": "object|null",
+        "why": "string",
+        "expected_benefits": {
+          "fengshui_culture": "string",
+          "function": "string",
+          "aesthetics": "string"
+        },
+        "tradeoffs": [
+          "string"
+        ],
+        "alternative": "string|null"
+      }
+    ],
+    "adjustment_order": [
+      "recommendation_id"
+    ],
+    "required_more_data": [
+      "string"
+    ],
+    "disclaimer": "本结果是传统居住文化与空间设计的辅助建议，不替代工程设计、施工图审查或专业人员意见。"
+  },
+  "example_case": {
+    "input": {
+      "layout_id": "demo_layout_01",
+      "unit": "mm",
+      "north_angle_deg": null,
+      "rooms": [
+        {
+          "room_id": "entrance_01",
+          "type": "entrance",
+          "polygon": [
+            [
+              0,
+              0
+            ],
+            [
+              1800,
+              0
+            ],
+            [
+              1800,
+              2200
+            ],
+            [
+              0,
+              2200
+            ]
+          ],
+          "height_mm": 2800,
+          "usage": "入户"
+        },
+        {
+          "room_id": "living_01",
+          "type": "living_room",
+          "polygon": [
+            [
+              1800,
+              0
+            ],
+            [
+              6800,
+              0
+            ],
+            [
+              6800,
+              4200
+            ],
+            [
+              1800,
+              4200
+            ]
+          ],
+          "height_mm": 2800,
+          "usage": "客厅"
+        },
+        {
+          "room_id": "bedroom_01",
+          "type": "bedroom",
+          "polygon": [
+            [
+              0,
+              4200
+            ],
+            [
+              4200,
+              4200
+            ],
+            [
+              4200,
+              7600
+            ],
+            [
+              0,
+              7600
+            ]
+          ],
+          "height_mm": 2800,
+          "usage": "主卧"
+        }
+      ],
+      "openings": [
+        {
+          "opening_id": "door_entry",
+          "type": "door",
+          "room_ids": [
+            "entrance_01"
+          ],
+          "position": [
+            0,
+            900
+          ],
+          "width_mm": 950,
+          "openable": true,
+          "swing_direction": "inward"
+        },
+        {
+          "opening_id": "balcony_door",
+          "type": "balcony_door",
+          "room_ids": [
+            "living_01"
+          ],
+          "position": [
+            6800,
+            1000
+          ],
+          "width_mm": 2400,
+          "openable": true,
+          "swing_direction": "sliding"
+        },
+        {
+          "opening_id": "bedroom_door",
+          "type": "door",
+          "room_ids": [
+            "bedroom_01"
+          ],
+          "position": [
+            2000,
+            4200
+          ],
+          "width_mm": 850,
+          "openable": true,
+          "swing_direction": "inward"
+        },
+        {
+          "opening_id": "bedroom_window",
+          "type": "window",
+          "room_ids": [
+            "bedroom_01"
+          ],
+          "position": [
+            2100,
+            7600
+          ],
+          "width_mm": 1800,
+          "openable": true,
+          "swing_direction": "inward"
+        }
+      ],
+      "fixed_elements": [],
+      "furniture": [
+        {
+          "furniture_id": "sofa_01",
+          "type": "sofa",
+          "position": [
+            3900,
+            1800,
+            0
+          ],
+          "rotation_deg": 0,
+          "bounding_box_mm": [
+            2600,
+            950,
+            850
+          ],
+          "movable": true,
+          "style_tags": [
+            "意式",
+            "低靠背"
+          ]
+        },
+        {
+          "furniture_id": "bed_01",
+          "type": "bed",
+          "position": [
+            2100,
+            6100,
+            0
+          ],
+          "rotation_deg": 0,
+          "bounding_box_mm": [
+            1800,
+            2000,
+            1000
+          ],
+          "movable": true,
+          "style_tags": [
+            "现代"
+          ]
+        },
+        {
+          "furniture_id": "mirror_01",
+          "type": "mirror",
+          "position": [
+            700,
+            6100,
+            0
+          ],
+          "rotation_deg": 90,
+          "bounding_box_mm": [
+            900,
+            50,
+            1800
+          ],
+          "movable": true,
+          "style_tags": [
+            "全身镜"
+          ]
+        }
+      ],
+      "user_profile": {
+        "resident_count": 2,
+        "family_members": [
+          "adult"
+        ],
+        "style_preference": [
+          "意式极简"
+        ],
+        "fengshui_importance": "high",
+        "function_priority": [
+          "客厅沉浸体验",
+          "卧室安静",
+          "动线顺畅"
+        ],
+        "privacy_priority": "high",
+        "budget_level": "medium",
+        "explicit_taboo_preferences": [
+          "床不要正对门",
+          "沙发希望有靠"
+        ]
+      },
+      "precomputed_relations": [
+        {
+          "relation_type": "entrance_to_balcony_alignment",
+          "source_id": "door_entry",
+          "target_id": "balcony_door",
+          "measurements": {
+            "angle_deg": 6,
+            "line_of_sight_clear": true,
+            "distance_mm": 6600
+          }
+        },
+        {
+          "relation_type": "sofa_back_support",
+          "source_id": "sofa_01",
+          "target_id": "living_01",
+          "measurements": {
+            "back_to_solid_surface_distance_mm": 1450,
+            "backside_traffic_frequency": "high",
+            "backside_opening_type": "entrance_path"
+          }
+        },
+        {
+          "relation_type": "door_to_bed_visibility",
+          "source_id": "bedroom_door",
+          "target_id": "bed_01",
+          "measurements": {
+            "angle_deg": 9,
+            "bed_visibility_ratio_from_door": 0.72,
+            "distance_mm": 2600
+          }
+        },
+        {
+          "relation_type": "bed_head_support",
+          "source_id": "bed_01",
+          "target_id": "bedroom_window",
+          "measurements": {
+            "head_to_solid_wall_distance_mm": 1100,
+            "bed_head_overlaps_window": true,
+            "traffic_behind_head": false
+          }
+        },
+        {
+          "relation_type": "mirror_visibility",
+          "source_id": "mirror_01",
+          "target_id": "bed_01",
+          "measurements": {
+            "mirror_visible_from_bed_eye_points": true,
+            "mirror_visible_from_entrance": false,
+            "mirror_area_m2": 1.62
+          }
+        }
+      ]
+    },
+    "expected_output_example": {
+      "layout_id": "demo_layout_01",
+      "analysis_status": "partial",
+      "is_recommended": true,
+      "summary": "方案具备意式极简的开敞感，但入户视线贯通、沙发背后高频通行以及主卧床位关系会削弱空间稳定感和私密性。建议先调整床位和沙发，再用轻量玄关节点处理入户层次。",
+      "scores": {
+        "safety_and_compliance": 88,
+        "function_and_access": 72,
+        "cultural_fengshui": 58,
+        "comfort_privacy_light_ventilation": 66,
+        "aesthetics_and_style": 82,
+        "overall": 71,
+        "confidence": 84
+      },
+      "strengths": [
+        {
+          "title": "客厅空间保持开敞",
+          "observable_fact": "当前客厅中心未被大型柜体切割，适合沉浸式走动体验。",
+          "rule_ids": [
+            "FS-SCALE-001"
+          ],
+          "reason": "符合明堂开阔与现代空间留白的共同目标。"
+        }
+      ],
+      "issues": [
+        {
+          "issue_id": "issue_001",
+          "status": "warning",
+          "severity": "medium",
+          "space_ids": [
+            "entrance_01",
+            "living_01"
+          ],
+          "object_ids": [
+            "door_entry",
+            "balcony_door"
+          ],
+          "title": "入户与阳台形成强直线贯通",
+          "observable_fact": "入户门至阳台门夹角约6度，无遮挡视距约6600mm。",
+          "rule_ids": [
+            "FS-ENT-002"
+          ],
+          "evidence_trace": [
+            {
+              "source_id": "FORM_SCHOOL_GENERAL",
+              "evidence_level": "C",
+              "clause_or_concept": "藏风聚气",
+              "usage_note": "作为传统空间层次解释，不作吉凶预测。"
+            },
+            {
+              "source_id": "PROJECT_THRESHOLD",
+              "evidence_level": "D",
+              "clause_or_concept": "直线关系角度默认阈值15度",
+              "usage_note": "项目启发式，可配置。"
+            }
+          ],
+          "cultural_interpretation": "传统宅居文化倾向在入口和内部核心空间之间保留停顿与回旋。",
+          "modern_design_interpretation": "直接贯通会减少第一视角层次和隐私缓冲。",
+          "user_relevance": "用户高度重视风水和隐私，因此该问题权重提高。",
+          "confidence": 0.94,
+          "missing_data": []
+        },
+        {
+          "issue_id": "issue_002",
+          "status": "fail",
+          "severity": "high",
+          "space_ids": [
+            "bedroom_01"
+          ],
+          "object_ids": [
+            "bed_01",
+            "bedroom_door",
+            "bedroom_window"
+          ],
+          "title": "床正对房门且床头位于窗下",
+          "observable_fact": "房门至床中心夹角约9度，从门口可见床面积约72%；床头与窗区域重叠。",
+          "rule_ids": [
+            "FS-BED-001",
+            "FS-BED-002"
+          ],
+          "evidence_trace": [
+            {
+              "source_id": "FORM_SCHOOL_GENERAL",
+              "evidence_level": "C",
+              "clause_or_concept": "床头有靠、门床避免直冲",
+              "usage_note": "传统文化偏好。"
+            },
+            {
+              "source_id": "GB55038_2025",
+              "evidence_level": "A",
+              "clause_or_concept": "2.2.7、6.2.2、6.3.3",
+              "usage_note": "调整不得妨碍采光、通风和窗户开启。"
+            }
+          ],
+          "cultural_interpretation": "床位缺少稳定实体支撑，且处于开门直视范围。",
+          "modern_design_interpretation": "会增加隐私暴露，并可能受到窗边光、风和噪声干扰。",
+          "user_relevance": "用户明确要求床不要正对门，因此应优先处理。",
+          "confidence": 0.97,
+          "missing_data": []
+        }
+      ],
+      "recommendations": [
+        {
+          "recommendation_id": "rec_001",
+          "priority": "P1",
+          "related_issue_ids": [
+            "issue_002"
+          ],
+          "action_type": "move",
+          "target_object_ids": [
+            "bed_01"
+          ],
+          "action": "将床头移至不含窗洞的完整侧墙，并轻微横移，使房门位于床的侧前方而非正对床中心。",
+          "geometry_parameters": {
+            "target_headboard_surface": "solid_wall",
+            "avoid_door_alignment_angle_deg": 15,
+            "retain_window_operation": true
+          },
+          "why": "一次调整同时改善床头支撑、门口视线、隐私和窗边干扰。",
+          "expected_benefits": {
+            "fengshui_culture": "形成床头有靠并缓解门床直冲。",
+            "function": "改善上下床动线和开窗操作。",
+            "aesthetics": "建立更稳定的卧室视觉中心。"
+          },
+          "tradeoffs": [
+            "需重新检查床侧通道和衣柜开门空间。"
+          ],
+          "alternative": "若床无法移动，使用稳固高靠背、可透光的局部隔断和优化窗帘，但此方案仅为折中。"
+        },
+        {
+          "recommendation_id": "rec_002",
+          "priority": "P1",
+          "related_issue_ids": [],
+          "action_type": "move",
+          "target_object_ids": [
+            "sofa_01"
+          ],
+          "action": "将沙发向稳定墙面靠近，或在沙发背后增加窄边柜形成边界，同时保持主要通道净宽。",
+          "geometry_parameters": {
+            "target_back_gap_max_mm": 300,
+            "main_path_preferred_min_mm": 900
+          },
+          "why": "减少背后高频通行干扰，并形成明确客厅中心。",
+          "expected_benefits": {
+            "fengshui_culture": "改善主座有靠。",
+            "function": "减少客厅动线穿越沙发背后。",
+            "aesthetics": "增强家具组合完整度。"
+          },
+          "tradeoffs": [
+            "可能减少客厅中央留白，需要同步校验沉浸式行走范围。"
+          ],
+          "alternative": "保留沙发位置，在背后加高度不过肩的窄柜或通透格栅。"
+        },
+        {
+          "recommendation_id": "rec_003",
+          "priority": "P2",
+          "related_issue_ids": [
+            "issue_001"
+          ],
+          "action_type": "add_buffer",
+          "target_object_ids": [
+            "door_entry"
+          ],
+          "action": "在入户与客厅之间增加通透玄关节点，通过格栅、矮柜和灯光形成视觉停顿。",
+          "geometry_parameters": {
+            "do_not_block_main_path": true,
+            "preferred_buffer_depth_mm": 900
+          },
+          "why": "在不牺牲意式开敞感的情况下增加入户层次与隐私。",
+          "expected_benefits": {
+            "fengshui_culture": "形成回旋与聚合感。",
+            "function": "增加换鞋和临时收纳。",
+            "aesthetics": "建立入户第一视觉焦点。"
+          },
+          "tradeoffs": [
+            "新增构件应保持轻量，避免小户型入口拥堵。"
+          ],
+          "alternative": "仅使用地毯、边几、吊灯或绿植形成软性分区。"
+        }
+      ],
+      "adjustment_order": [
+        "rec_001",
+        "rec_002",
+        "rec_003"
+      ],
+      "required_more_data": [
+        "主卧衣柜位置与开门包络",
+        "客厅调整后的有效通道宽度",
+        "窗扇实际开启方向"
+      ],
+      "disclaimer": "本结果是传统居住文化与空间设计的辅助建议，不替代工程设计、施工图审查或专业人员意见。"
+    }
+  }
+}

@@ -118,9 +118,11 @@ private fun CategoryChip(text: String, selected: Boolean, onClick: () -> Unit) {
 
 /**
  * Loads a preview image for a furniture model. Tries in order:
- * 1. Drawable resource based on category (bundled in APK, always accessible)
- * 2. Model-specific sidecar (`<name>.png` or `<name>.jpg` next to the .glb)
- * 3. Category-level image (`Sofa.png`, `Chair.png`, etc. in the same folder)
+ * 1. Model-specific sidecar (`<name>.png` or `<name>.jpg` next to the .glb) — the real
+ *    product image uploaded alongside the model.
+ * 2. Category-level image (`Sofa.png`, `Chair.png`, etc. in the same folder).
+ * 3. Drawable resource based on category (bundled in APK, always accessible) — generic
+ *    fallback for Sofa/Chair/Table when no per-model image exists.
  * Returns null when none exist, falling back to a generated thumbnail.
  */
 @Composable
@@ -128,8 +130,30 @@ private fun loadModelPreview(modelFile: File): ImageBitmap? {
     val context = LocalContext.current
     return remember(modelFile) {
         runCatching {
+            // 1. Try model-specific filesystem image first (the real preview).
+            val dir = modelFile.parentFile
+            val baseName = modelFile.nameWithoutExtension
+            val pngFile = File(dir, "$baseName.png")
+            val jpgFile = File(dir, "$baseName.jpg")
+            val imageFile = when {
+                pngFile.isFile -> pngFile
+                jpgFile.isFile -> jpgFile
+                else -> null
+            }
+            if (imageFile != null) {
+                return@runCatching imageFile.inputStream().use { stream ->
+                    BitmapFactory.decodeStream(stream)?.asImageBitmap()
+                }
+            }
+            // 2. Category-level image in the same folder.
             val category = categorizeModel(modelFile.name)
-            // 1. Try drawable resource (always accessible, no permission issues)
+            val catPng = File(dir, "$category.png")
+            if (catPng.isFile) {
+                return@runCatching catPng.inputStream().use { stream ->
+                    BitmapFactory.decodeStream(stream)?.asImageBitmap()
+                }
+            }
+            // 3. Fall back to a bundled drawable for the common categories.
             val resId = when (category) {
                 "Sofa" -> R.drawable.furniture_sofa
                 "Chair" -> R.drawable.furniture_chair
@@ -137,23 +161,9 @@ private fun loadModelPreview(modelFile: File): ImageBitmap? {
                 else -> 0
             }
             if (resId != 0) {
-                val bmp = BitmapFactory.decodeResource(context.resources, resId)
-                return@runCatching bmp?.asImageBitmap()
-            }
-            // 2. Try model-specific filesystem image
-            val dir = modelFile.parentFile
-            val baseName = modelFile.nameWithoutExtension
-            val pngFile = File(dir, "$baseName.png")
-            val jpgFile = File(dir, "$baseName.jpg")
-            val catPng = File(dir, "$category.png")
-            val imageFile = when {
-                pngFile.isFile -> pngFile
-                jpgFile.isFile -> jpgFile
-                catPng.isFile -> catPng
-                else -> return@runCatching null
-            }
-            imageFile.inputStream().use { stream ->
-                BitmapFactory.decodeStream(stream)?.asImageBitmap()
+                BitmapFactory.decodeResource(context.resources, resId)?.asImageBitmap()
+            } else {
+                null
             }
         }.getOrNull()
     }
@@ -378,14 +388,10 @@ internal fun FurnitureLibraryPanel(
             Spacer(Modifier.height(10.dp))
 
             if (currentModel != null) {
-                // Determine if this category has a bundled drawable preview
+                // Preview lookup: real per-model PNG uploaded alongside the .glb first,
+                // then the bundled category drawable, then a generated colored thumbnail.
                 val modelCategory = categorizeModel(currentModel.file.name)
-                val drawableResId = when (modelCategory) {
-                    "Sofa" -> R.drawable.furniture_sofa
-                    "Chair" -> R.drawable.furniture_chair
-                    "Table" -> R.drawable.furniture_table
-                    else -> 0
-                }
+                val preview = loadModelPreview(currentModel.file)
                 // Preview card — Figma G85: gradient #F8E3CA -> #F6AD88, radius 23dp
                 Box(
                     modifier =
@@ -400,10 +406,9 @@ internal fun FurnitureLibraryPanel(
                             .padding(12.dp),
                 ) {
                     Column {
-                        // Image preview: drawable resource (painterResource) or generated thumbnail
-                        if (drawableResId != 0) {
+                        if (preview != null) {
                             Image(
-                                painter = painterResource(id = drawableResId),
+                                bitmap = preview,
                                 contentDescription = currentModel.displayName,
                                 modifier =
                                     Modifier
@@ -716,21 +721,23 @@ internal fun PlacementHudPanel(
     }
 }
 
-/** AI arrangement: prompt, presets, run button, status — plus the surface-texture slots. */
+/** AI arrangement: prompt, presets, run button, status. (Surface textures now live in the Environment panel.) */
 @Composable
 internal fun AiArrangePanel(
     aiPrompt: String,
     aiBusy: Boolean,
     aiStatus: String,
     roomAvailable: Boolean,
+    advancedThinking: Boolean,
+    planMode: Boolean,
+    iterateMode: Boolean,
+    onAdvancedThinkingChange: (Boolean) -> Unit,
+    onPlanModeChange: (Boolean) -> Unit,
+    onIterateModeChange: (Boolean) -> Unit,
     onAiPromptChange: (String) -> Unit,
     onArrangeWithAi: () -> Unit,
-    availableTextures: List<TextureSpec>,
-    selectedTextures: Map<SurfaceSlot, String?>,
-    onTextureSlotChange: (SurfaceSlot, String?) -> Unit,
-    onApplyTextures: () -> Unit,
 ) {
-    PanelFrame(width = 420.dp, height = 550.dp) {
+    PanelFrame(width = 420.dp, height = 480.dp) {
         Text(
             text = "AI Arrange",
             style = PicoTheme.typography.displaySmall,
@@ -769,8 +776,81 @@ internal fun AiArrangePanel(
             }
         }
         Spacer(Modifier.height(8.dp))
+        // Option toggles. Tapping a toggle flips its state; the active one is highlighted
+        // with the accent fill so the user can see at a glance what's on.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            AiToggleChip(
+                text = "Advanced Thinking",
+                active = advancedThinking,
+                enabled = roomAvailable && !aiBusy,
+                onClick = { onAdvancedThinkingChange(!advancedThinking) },
+                modifier = Modifier.weight(1f),
+            )
+            AiToggleChip(
+                text = "Plan Mode",
+                active = planMode,
+                enabled = roomAvailable && !aiBusy,
+                onClick = { onPlanModeChange(!planMode) },
+                modifier = Modifier.weight(1f),
+            )
+        }
+        // Iterate toggle on its own row: when on, the AI re-evaluates its placed layout
+        // and revises it up to 3 times until it declares satisfaction. Disabled in plan
+        // mode (which produces no placements to iterate on).
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            AiToggleChip(
+                text = "Iterate (self-improve)",
+                active = iterateMode,
+                enabled = roomAvailable && !aiBusy && !planMode,
+                onClick = { onIterateModeChange(!iterateMode) },
+                modifier = Modifier.weight(1f),
+            )
+        }
+        if (advancedThinking) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "Advanced: fengshui/国学 config prepended to the AI prompt.",
+                style = PicoTheme.typography.titleMedium,
+                fontSize = 11.sp,
+                color = AiHint,
+            )
+        }
+        if (planMode) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "Plan: AI gives suggestions only, no furniture is placed.",
+                style = PicoTheme.typography.titleMedium,
+                fontSize = 11.sp,
+                color = AiHint,
+            )
+        }
+        if (iterateMode) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "Iterate: after placing, AI re-evaluates the room and revises up to 3× until satisfied.",
+                style = PicoTheme.typography.titleMedium,
+                fontSize = 11.sp,
+                color = AiHint,
+            )
+        }
+        Spacer(Modifier.height(8.dp))
         AiActionButton(
-            text = if (aiBusy) "AI arranging…" else "Arrange with AI",
+            text =
+                if (aiBusy) {
+                    "AI arranging…"
+                } else if (planMode) {
+                    "Ask AI for suggestions"
+                } else if (iterateMode) {
+                    "Arrange with AI (iterate)"
+                } else {
+                    "Arrange with AI"
+                },
             enabled = roomAvailable && !aiBusy && aiPrompt.isNotBlank(),
             onClick = onArrangeWithAi,
         )
@@ -782,61 +862,6 @@ internal fun AiArrangePanel(
                 fontSize = 13.sp,
                 color = AiHint,
             )
-        }
-
-        Spacer(Modifier.height(14.dp))
-        // Textures section on a cream-white card.
-        Box(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(AiCardBg)
-                    .padding(12.dp),
-        ) {
-            Column {
-                Text(
-                    text = "Textures",
-                    style = PicoTheme.typography.displaySmall,
-                    fontSize = 19.sp,
-                    color = Color(0xFF3C2015),
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = "Reskin room surfaces. Applying rebuilds the room and clears placed furniture.",
-                    style = PicoTheme.typography.titleMedium,
-                    fontSize = 13.sp,
-                    color = AiHint,
-                )
-                if (availableTextures.isEmpty()) {
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        text = "No textures found — push .png/.jpg files to the models folder, then scan.",
-                        style = PicoTheme.typography.titleMedium,
-                        fontSize = 13.sp,
-                        color = AiHint,
-                    )
-                }
-                SurfaceSlot.entries.forEach { slot ->
-                    TextureSlotRow(
-                        label = slot.key.replaceFirstChar { it.uppercase() },
-                        current = selectedTextures[slot],
-                        options =
-                            listOf(null) +
-                                availableTextures
-                                    .filter { it.surfaces.isEmpty() || slot in it.surfaces }
-                                    .map { it.displayName },
-                        enabled = roomAvailable,
-                        onChange = { name -> onTextureSlotChange(slot, name) },
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-                AiActionButton(
-                    text = "Apply textures (rebuild)",
-                    enabled = roomAvailable && availableTextures.isNotEmpty(),
-                    onClick = onApplyTextures,
-                )
-            }
         }
     }
 }
@@ -858,6 +883,111 @@ private fun AiChip(text: String, enabled: Boolean, onClick: () -> Unit) {
             text = text,
             style = PicoTheme.typography.titleMedium,
             fontSize = 14.sp,
+            color = if (enabled) Color(0xFFEEEEEE) else Color(0x66EEEEEE),
+        )
+    }
+}
+
+/**
+ * Surface-texture reskin card: one [TextureSlotRow] per [SurfaceSlot] plus an "Apply" button
+ * that rebuilds the room. Extracted so it can be hosted outside the AI Arrange panel (it now
+ * lives in the Environment panel where the virtual-walk controls used to be).
+ */
+@Composable
+internal fun TexturesCard(
+    availableTextures: List<TextureSpec>,
+    selectedTextures: Map<SurfaceSlot, String?>,
+    roomAvailable: Boolean,
+    onTextureSlotChange: (SurfaceSlot, String?) -> Unit,
+    onApplyTextures: () -> Unit,
+) {
+    Box(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(AiCardBg)
+                .padding(12.dp),
+    ) {
+        Column {
+            Text(
+                text = "Textures",
+                style = PicoTheme.typography.displaySmall,
+                fontSize = 19.sp,
+                color = Color(0xFF3C2015),
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "Reskin room surfaces. Applying rebuilds the room and clears placed furniture.",
+                style = PicoTheme.typography.titleMedium,
+                fontSize = 13.sp,
+                color = AiHint,
+            )
+            if (availableTextures.isEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "No textures found — push .png/.jpg files to the models folder, then scan.",
+                    style = PicoTheme.typography.titleMedium,
+                    fontSize = 13.sp,
+                    color = AiHint,
+                )
+            }
+            SurfaceSlot.entries.forEach { slot ->
+                TextureSlotRow(
+                    label = slot.key.replaceFirstChar { it.uppercase() },
+                    current = selectedTextures[slot],
+                    options =
+                        listOf(null) +
+                            availableTextures
+                                .filter { it.surfaces.isEmpty() || slot in it.surfaces }
+                                .map { it.displayName },
+                    enabled = roomAvailable,
+                    onChange = { name -> onTextureSlotChange(slot, name) },
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            AiActionButton(
+                text = "Apply textures (rebuild)",
+                enabled = roomAvailable && availableTextures.isNotEmpty(),
+                onClick = onApplyTextures,
+            )
+        }
+    }
+}
+
+/**
+ * A two-state toggle chip (on/off). When [active] is true the chip fills with the accent
+ * color so the user can see at a glance which options are enabled. Tapping flips the state
+ * via [onClick] (the parent decides whether to set true or false).
+ */
+@Composable
+private fun AiToggleChip(
+    text: String,
+    active: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier =
+            modifier
+                .clip(RoundedCornerShape(8.dp))
+                .background(
+                    when {
+                        !enabled -> Color(0x1AFFFFFF)
+                        active -> AiAccent
+                        else -> AiGlassFill
+                    },
+                )
+                .border(1.dp, AiGlassBorder, RoundedCornerShape(8.dp))
+                .clickable(enabled = enabled, onClick = onClick)
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = if (active) "$text ✓" else text,
+            style = PicoTheme.typography.titleMedium,
+            fontSize = 12.sp,
             color = if (enabled) Color(0xFFEEEEEE) else Color(0x66EEEEEE),
         )
     }

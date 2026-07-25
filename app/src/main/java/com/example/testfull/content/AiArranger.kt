@@ -66,6 +66,13 @@ internal data class AiLayout(
     val notes: String?,
     /** Optional surface reskins requested by the AI: slot → texture display name. */
     val textures: Map<SurfaceSlot, String> = emptyMap(),
+    /** Plan-mode suggestions (analysis without placement). Empty in normal mode. */
+    val suggestions: List<String> = emptyList(),
+    /**
+     * Self-evaluation signal used in ITERATE mode: true when the AI declares the current layout
+     * is satisfactory and no further iteration is needed. Always false in non-iterate runs.
+     */
+    val satisfied: Boolean = false,
 )
 
 /** An AI texture choice that resolved to a real texture from the library. */
@@ -180,16 +187,51 @@ internal fun buildArrangementMessages(
     currentPlacements: List<PlacedSummary>,
     textureCatalog: List<TextureSpec> = emptyList(),
     zoneNotes: String? = null,
+    prePrompt: String? = null,
+    planMode: Boolean = false,
+    iterate: Boolean = false,
+    iteration: Int = 0,
+    maxIterations: Int = 3,
+    previousNotes: String? = null,
 ): Pair<String, String> {
     val system =
         buildString {
-            append(
-                "You are an interior-design engine inside a VR room planner. You receive a " +
-                    "structured JSON description of a real room (walls, doors, windows, " +
-                    "existing furniture) plus a furniture library, and you answer with " +
-                    "placement instructions as a single JSON object and nothing else — no " +
-                    "prose, no markdown fences.\n\n"
-            )
+            // Optional pre-prompt (e.g. the AdventureX fengshui/国学 config) prepended
+            // verbatim so the model weighs it as additional context before the standard
+            // interior-design instructions. Wrapped with clear delimiters.
+            if (!prePrompt.isNullOrBlank()) {
+                append("=== ADVANCED CONTEXT (pre-prompt) ===\n")
+                append(prePrompt)
+                append("\n=== END ADVANCED CONTEXT ===\n\n")
+            }
+            if (planMode) {
+                append(
+                    "You are an interior-design consultant inside a VR room planner. The user " +
+                        "has enabled PLAN MODE: you must NOT produce any placement " +
+                        "instructions. Instead, analyze the room and the user's request, then " +
+                        "provide commentary, suggestions, and design rationale as a single JSON " +
+                        "object and nothing else — no prose, no markdown fences.\n\n"
+                )
+            } else if (iterate) {
+                append(
+                    "You are an interior-design engine inside a VR room planner running in " +
+                        "ITERATE mode. The room already contains furniture (described in the " +
+                        "USER message under \"furniture\"). You must SELF-EVALUATE the current " +
+                        "arrangement against the user's request and the spatial rules, then " +
+                        "either confirm it is satisfactory or return a FULLY REVISED layout " +
+                        "that improves on it. The revised layout replaces the current one " +
+                        "entirely. Answer with a single JSON object and nothing else — no " +
+                        "prose, no markdown fences.\n\n"
+                )
+            } else {
+                append(
+                    "You are an interior-design engine inside a VR room planner. You receive a " +
+                        "structured JSON description of a real room (walls, doors, windows, " +
+                        "existing furniture) plus a furniture library, and you answer with " +
+                        "placement instructions as a single JSON object and nothing else — no " +
+                        "prose, no markdown fences.\n\n"
+                )
+            }
             append("SPATIAL VOCABULARY — use exactly these meanings:\n")
             append("- \"next to / beside\": close but never touching — a 0.05 to 0.3 m gap between bounding boxes. Overlap is never allowed.\n")
             append("- \"against / along the wall\": the item's back within 0.1 m of the wall line, parallel to that wall.\n")
@@ -216,16 +258,66 @@ internal fun buildArrangementMessages(
             append("- modern: pieces parallel to walls, aligned axes, symmetry, generous negative space.\n")
             append("- cozy: tighter groupings angled toward a focal point, never below minimum clearances.\n")
             append("- Always explain your interpretation briefly in \"notes\".\n\n")
-            append(
-                "OUTPUT SCHEMA (strict): {\"placements\": [{\"model\": string, \"x\": number, " +
-                    "\"z\": number, \"yaw\": number, \"scale\": number}], \"notes\": string, " +
-                    "optional \"textures\": {\"wall|floor|ceiling|door|window\": textureName}}\n" +
-                    "Example answer for \"seat two people\": " +
-                    "{\"placements\": [{\"model\": \"dining-chair\", \"x\": 1.0, \"z\": 0.0, " +
-                    "\"yaw\": 270, \"scale\": 1}, {\"model\": \"dining-chair\", \"x\": -1.0, " +
-                    "\"z\": 0.0, \"yaw\": 90, \"scale\": 1}], " +
-                    "\"notes\": \"Two chairs facing each other.\"}"
-            )
+            if (planMode) {
+                append(
+                    "OUTPUT SCHEMA (strict, PLAN MODE): {\"placements\": [], \"notes\": string, " +
+                        "\"suggestions\": [string]}\n" +
+                        "In PLAN MODE the \"placements\" array MUST always be empty. Put all " +
+                        "analysis, commentary, pros/cons, and design recommendations in " +
+                        "\"notes\" (a single string, may use newlines) and list each concrete " +
+                        "suggestion as an item in \"suggestions\". Do NOT output \"textures\".\n" +
+                        "Example: {\"placements\": [], \"notes\": \"The room is 4x6 m with one " +
+                        "window. A cozy layout would place the sofa against the long wall...\", " +
+                        "\"suggestions\": [\"Sofa against the south wall for better backlight\", " +
+                        "\"Add a rug to anchor the seating zone\"]}"
+                )
+            } else if (iterate) {
+                append(
+                    "OUTPUT SCHEMA (strict, ITERATE): {\"satisfied\": boolean, \"placements\": " +
+                        "[{\"model\": string, \"x\": number, \"z\": number, \"yaw\": number, " +
+                        "\"scale\": number}], \"notes\": string, optional \"textures\": " +
+                        "{\"wall|floor|ceiling|door|window\": textureName}}\n" +
+                        "SELF-EVALUATION RULES:\n" +
+                        "- Set \"satisfied\": true ONLY when the current furniture array already " +
+                        "fully satisfies the user's request AND obeys every spatial rule " +
+                        "(no overlaps, clear walkways, doors unobstructed, fengshui/style " +
+                        "intent met). In that case return \"placements\": [] (the existing " +
+                        "furniture stays as-is) and briefly justify in \"notes\".\n" +
+                        "- Otherwise set \"satisfied\": false and return a COMPLETE, improved " +
+                        "placements array (the existing furniture is fully replaced by it). " +
+                        "Use \"notes\" to explain what was wrong and what you changed.\n" +
+                        "- Be honest and critical: do not declare satisfaction on the first " +
+                        "pass if any obvious improvement exists (e.g. tighter grouping, " +
+                        "better focal-point facing, clearer walkway, missing key piece).\n" +
+                        "Example: {\"satisfied\": false, \"placements\": [...], " +
+                        "\"notes\": \"Sofa was blocking the doorway; rotated and shifted to " +
+                        "the long wall.\"}"
+                )
+            } else {
+                append(
+                    "OUTPUT SCHEMA (strict): {\"placements\": [{\"model\": string, \"x\": number, " +
+                        "\"z\": number, \"yaw\": number, \"scale\": number}], \"notes\": string, " +
+                        "optional \"textures\": {\"wall|floor|ceiling|door|window\": textureName}}\n" +
+                        "Example answer for \"seat two people\": " +
+                        "{\"placements\": [{\"model\": \"dining-chair\", \"x\": 1.0, \"z\": 0.0, " +
+                        "\"yaw\": 270, \"scale\": 1}, {\"model\": \"dining-chair\", \"x\": -1.0, " +
+                        "\"z\": 0.0, \"yaw\": 90, \"scale\": 1}], " +
+                        "\"notes\": \"Two chairs facing each other.\"}"
+                )
+            }
+            if (iterate) {
+                append(
+                    "\n\nITERATE PROTOCOL: You are part of a self-improvement loop (max " +
+                        "$maxIterations iterations). The USER message describes the room AS IT " +
+                        "CURRENTLY IS, including the furniture already placed. Treat that " +
+                        "furniture as the result of your previous turn. Evaluate it critically: " +
+                        "check overlaps, door/window clearance, walkway widths, focal-point " +
+                        "orientation, style/coherence with the request, and (if Advanced " +
+                        "Context is on) the fengshui/国学 rules. If you can improve it, return " +
+                        "satisfied=false with a full revised layout. Only when no further " +
+                        "improvement is warranted, return satisfied=true with placements=[]."
+                )
+            }
         }
 
     val user = StringBuilder()
@@ -368,6 +460,28 @@ internal fun buildArrangementMessages(
             "respect the vocabulary gaps — placements must never overlap; keep doors and " +
             "walkways clear. Respond with the placements JSON only."
     )
+    if (iterate && iteration > 0) {
+        user.append("\n\n=== ITERATION CONTEXT ===\n")
+        user.append("This is iteration $iteration of $maxIterations in the self-improvement loop.\n")
+        user.append(
+            "The \"furniture\" array above is the layout YOU produced on the previous turn, " +
+                "now actually placed in the room. Evaluate it against the request and rules; " +
+                "return satisfied=true (with placements=[]) if it is already optimal, or " +
+                "satisfied=false with a full improved placements array otherwise.\n"
+        )
+        if (!previousNotes.isNullOrBlank()) {
+            user.append("Your previous notes: ").append(previousNotes.trim()).append("\n")
+        }
+        user.append("=== END ITERATION CONTEXT ===")
+    } else if (iterate) {
+        user.append("\n\n=== ITERATION CONTEXT ===\n")
+        user.append(
+            "Iterate mode is ON: produce your best initial layout now. After you answer, " +
+                "the system will place it, then re-invoke you to evaluate and improve it " +
+                "(up to $maxIterations times). Treat this turn as iteration 0 (the seed).\n" +
+                "=== END ITERATION CONTEXT ==="
+        )
+    }
     return system to user.toString()
 }
 
@@ -406,7 +520,15 @@ internal fun parseAiLayout(content: String): AiLayout {
             if (name.isNotEmpty()) textures[slot] = name
         }
     }
-    return AiLayout(placements, notes, textures)
+    val suggestions = mutableListOf<String>()
+    root.optJSONArray("suggestions")?.let { arr ->
+        for (index in 0 until arr.length()) {
+            val item = arr.optString(index, "").trim()
+            if (item.isNotEmpty()) suggestions += item
+        }
+    }
+    val satisfied = root.optBoolean("satisfied", false)
+    return AiLayout(placements, notes, textures, suggestions, satisfied)
 }
 
 /**
@@ -593,6 +715,12 @@ internal suspend fun requestAiLayout(
     currentPlacements: List<PlacedSummary>,
     textureCatalog: List<TextureSpec> = emptyList(),
     zoneNotes: String? = null,
+    prePrompt: String? = null,
+    planMode: Boolean = false,
+    iterate: Boolean = false,
+    iteration: Int = 0,
+    maxIterations: Int = 3,
+    previousNotes: String? = null,
 ): AiLayout {
     val (system, user) =
         buildArrangementMessages(
@@ -603,6 +731,12 @@ internal suspend fun requestAiLayout(
             currentPlacements,
             textureCatalog,
             zoneNotes,
+            prePrompt,
+            planMode,
+            iterate,
+            iteration,
+            maxIterations,
+            previousNotes,
         )
     Log.w(TAG, "request: system=${system.length} chars, user=${user.length} chars")
     Log.w(TAG, "request user message: ${user.take(1200)}")

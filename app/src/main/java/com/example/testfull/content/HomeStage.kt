@@ -94,6 +94,11 @@ private fun angleDeltaDegrees(a: Float, b: Float): Float {
 // per-frame move is enough to trip the ANR watchdog. Rate-limit updates and ignore
 // sub-centimeter jitter; snap instantly when the user turned far away instead.
 private const val HUD_UPDATE_INTERVAL_MS = 150L
+// The main panel rig updates faster than the placement HUD so rotation tracking
+// feels tight — at 150ms the panel visibly lags behind head turns (up to ~9° at
+// 60°/s), which reads as an elliptical swing. 50ms (20 Hz) is smooth enough for
+// yaw following without tripping the emulator ANR watchdog.
+private const val UI_RIG_UPDATE_INTERVAL_MS = 50L
 private const val HUD_SNAP_DISTANCE_METERS = 0.6f
 private const val HUD_MIN_MOVE_METERS = 0.02f
 private const val HUD_MIN_YAW_DEGREES = 2f
@@ -118,10 +123,16 @@ private class AimState {
     @Volatile var triggerEventCount: Int = 0
 }
 
-private const val ROOM_NAVIGATION_LIMIT_METERS = 30f
 private const val AIM_UPDATE_INTERVAL_MS = 33L
 private const val AIM_SOURCE_STALE_MS = 600L
 private const val TAG = "HomeStage"
+
+/**
+ * Cap on ITERATE-mode self-improvement turns after the seed layout. Each turn asks the AI to
+ * evaluate the just-placed furniture and either confirm (satisfied=true) or return a full
+ * revised layout. Three gives the AI room to course-correct without runaway cost.
+ */
+private const val ITERATE_MAX_ITERATIONS = 3
 
 /** Extra clearance (beyond half the wall thickness) kept between placed objects and walls. */
 private const val FOOTPRINT_CLEARANCE_METERS = 0.05f
@@ -251,6 +262,13 @@ fun HomeStage() {
     var modelRotation by remember { mutableStateOf(0f) }
     var placedCount by remember { mutableIntStateOf(0) }
     var aimStatus by remember { mutableStateOf("Aim: idle") }
+    // AI Arrange option toggles. Advanced Thinking prepends the AdventureX fengshui
+    // config JSON as a pre-prompt; Plan Mode makes the AI return analysis/suggestions
+    // only without placing any furniture; Iterate makes the AI self-evaluate and
+    // re-arrange up to ITERATE_MAX_ITERATIONS times until it declares satisfaction.
+    var advancedThinking by remember { mutableStateOf(false) }
+    var planMode by remember { mutableStateOf(false) }
+    var iterateMode by remember { mutableStateOf(false) }
 
     // --- AI Arrange state ---
     var modelCatalog by remember { mutableStateOf<List<CatalogModel>>(emptyList()) }
@@ -296,78 +314,62 @@ fun HomeStage() {
                 }
                 val (footprintWalls, footprintMargin) = localFootprint(appliedPlan)
                 val openings = localOpenings(appliedPlan)
-                val layout =
-                    requestAiLayout(
-                        userPrompt = aiPrompt,
-                        walls = footprintWalls,
-                        openings = openings,
-                        catalog = modelCatalog,
-                        currentPlacements = placementController.placedSummaries(),
-                        textureCatalog = availableTextures,
-                        zoneNotes = appliedPlan.zoneNotes,
-                    )
-                val resolved =
-                    resolveAiPlacements(
-                        layout = layout,
-                        catalog = modelCatalog,
-                        walls = footprintWalls,
-                        baseMargin = footprintMargin,
-                    )
-                // Surface reskins requested by the AI: rebuild the room FIRST (a rebuild
-                // destroys placed furniture — which we're about to replace anyway) and wait
-                // for it, so the spawns below land in the new room.
-                var textureNote = ""
-                if (layout.textures.isNotEmpty()) {
-                    val resolvedTextures = resolveAiTextures(layout.textures, availableTextures)
-                    if (resolvedTextures.skipped.isNotEmpty()) {
-                        textureNote =
-                            " Textures skipped: " +
-                                resolvedTextures.skipped.joinToString(", ") + "."
-                    }
-                    if (resolvedTextures.resolved.isNotEmpty()) {
-                        aiStatus = "Applying textures…"
-                        selectedTextures =
-                            selectedTextures +
-                                resolvedTextures.resolved.mapValues { it.value.displayName }
-                        roomTextures =
-                            resolveRoomTextures(selectedTextures, availableTextures, textureCache)
-                        val oldRoom = generatedRoom.room
-                        applyRevision += 1
-                        var waited = 0
-                        while (generatedRoom.room === oldRoom && waited < 200) {
-                            delay(100)
-                            waited++
+                // Load the AdventureX fengshui/国学 config from assets when Advanced
+                // Thinking is on, so it can be prepended to the system prompt.
+                val prePrompt =
+                    if (advancedThinking) {
+                        runCatching {
+                            context.assets
+                                .open("adventurex_fengshui_ai_config_v1.json")
+                                .bufferedReader()
+                                .use { it.readText() }
+                        }.getOrElse {
+                            Log.w(TAG, "could not load advanced pre-prompt: ${it.message}")
+                            null
                         }
+                    } else {
+                        null
                     }
-                }
-                // Apply = replace: the AI's layout is the full desired state, which also
-                // covers "move the existing furniture". Free the ghost too: a large one
-                // plus the spawn sequence trips the kernel low-memory killer. It is
-                // rebuilt after the run (see finally).
-                placementController.releaseSelectionGhost()
-                placementController.clearPlaced()
-                var spawned = 0
-                resolved.accepted.forEach { placement ->
-                    val placed =
-                        placementController.placeFromAi(
-                            model = placement.model,
-                            x = placement.x,
-                            z = placement.z,
-                            yawDegrees = placement.yawDegrees,
-                            scale = placement.scale,
+
+                // Shared spawn helper: resolves the AI placements against the catalog,
+                // frees the ghost, wipes the room, and spawns the new layout. Reports
+                // progress via aiStatus while spawning and returns a one-line summary
+                // (without notes) the caller can fold into its final status. Used for
+                // both the seed turn and each ITERATE turn.
+                val spawnLayout: suspend (AiLayout) -> String = { layout ->
+                    val resolved =
+                        resolveAiPlacements(
+                            layout = layout,
+                            catalog = modelCatalog,
+                            walls = footprintWalls,
+                            baseMargin = footprintMargin,
                         )
-                    if (placed) {
-                        spawned += 1
-                        aiStatus = "Placing… $spawned/${resolved.accepted.size}"
+                    // Apply = replace: the AI's layout is the full desired state, which also
+                    // covers "move the existing furniture". Free the ghost too: a large one
+                    // plus the spawn sequence trips the kernel low-memory killer. It is
+                    // rebuilt after the run (see finally).
+                    placementController.releaseSelectionGhost()
+                    placementController.clearPlaced()
+                    var spawned = 0
+                    resolved.accepted.forEach { placement ->
+                        val placed =
+                            placementController.placeFromAi(
+                                model = placement.model,
+                                x = placement.x,
+                                z = placement.z,
+                                yawDegrees = placement.yawDegrees,
+                                scale = placement.scale,
+                            )
+                        if (placed) {
+                            spawned += 1
+                            aiStatus = "Placing… $spawned/${resolved.accepted.size}"
+                        }
+                        // Let frames through between physics spawns (ANR guard for the emulator).
+                        delay(200)
                     }
-                    // Let frames through between physics spawns (ANR guard for the emulator).
-                    delay(200)
-                }
-                placedCount = placementController.placedCount
-                aiStatus =
+                    placedCount = placementController.placedCount
                     buildString {
                         append("AI placed $spawned of ${layout.placements.size}.")
-                        append(textureNote)
                         if (resolved.adjusted.isNotEmpty()) {
                             append(" Adjusted: ")
                             append(resolved.adjusted.joinToString(", "))
@@ -378,8 +380,144 @@ fun HomeStage() {
                             append(resolved.skipped.joinToString(", "))
                             append(".")
                         }
+                    }
+                }
+
+                // Helper: apply any texture reskins the AI returned. Rebuilds the room
+                // (which destroys placed furniture — always call BEFORE spawnLayout).
+                // Returns a "Textures skipped: …" note when entries were ignored.
+                val applyTextures: suspend (AiLayout) -> String = { layout ->
+                    if (layout.textures.isEmpty()) {
+                        ""
+                    } else {
+                        val resolvedTextures =
+                            resolveAiTextures(layout.textures, availableTextures)
+                        if (resolvedTextures.resolved.isNotEmpty()) {
+                            aiStatus = "Applying textures…"
+                            selectedTextures =
+                                selectedTextures +
+                                    resolvedTextures.resolved.mapValues { it.value.displayName }
+                            roomTextures =
+                                resolveRoomTextures(
+                                    selectedTextures,
+                                    availableTextures,
+                                    textureCache,
+                                )
+                            val oldRoom = generatedRoom.room
+                            applyRevision += 1
+                            var waited = 0
+                            while (generatedRoom.room === oldRoom && waited < 200) {
+                                delay(100)
+                                waited++
+                            }
+                        }
+                        if (resolvedTextures.skipped.isNotEmpty()) {
+                            " Textures skipped: " +
+                                resolvedTextures.skipped.joinToString(", ") + "."
+                        } else {
+                            ""
+                        }
+                    }
+                }
+
+                val layout =
+                    requestAiLayout(
+                        userPrompt = aiPrompt,
+                        walls = footprintWalls,
+                        openings = openings,
+                        catalog = modelCatalog,
+                        currentPlacements = placementController.placedSummaries(),
+                        textureCatalog = availableTextures,
+                        zoneNotes = appliedPlan.zoneNotes,
+                        prePrompt = prePrompt,
+                        planMode = planMode,
+                        iterate = iterateMode && !planMode,
+                        iteration = 0,
+                        maxIterations = ITERATE_MAX_ITERATIONS,
+                    )
+                // Plan Mode: the AI returned analysis/suggestions only (no placements).
+                // Surface them in the status and skip the spawn/texture steps entirely.
+                if (planMode) {
+                    val suggestionCount = layout.suggestions.size
+                    aiStatus =
+                        buildString {
+                            append("Plan mode — $suggestionCount suggestion(s).")
+                            layout.notes?.let { append(" $it") }
+                            if (layout.suggestions.isNotEmpty()) {
+                                append(" • ")
+                                append(layout.suggestions.joinToString(" | "))
+                            }
+                        }
+                    return@launch
+                }
+                // Surface reskins requested by the AI: rebuild the room FIRST (a rebuild
+                // destroys placed furniture — which we're about to replace anyway) and wait
+                // for it, so the spawns below land in the new room.
+                val textureNote = applyTextures(layout)
+                val spawnNote = spawnLayout(layout)
+                aiStatus =
+                    buildString {
+                        append(spawnNote)
+                        append(textureNote)
                         layout.notes?.let { append(" $it") }
                     }
+
+                // ITERATE mode: re-invoke the AI with the now-placed layout and let it
+                // self-evaluate. Stops when the AI returns satisfied=true (or an empty
+                // revision), or after ITERATE_MAX_ITERATIONS turns. Each turn replaces the
+                // room's furniture with the AI's revised layout.
+                if (iterateMode) {
+                    var lastNotes = layout.notes
+                    var iter = 1
+                    while (iter <= ITERATE_MAX_ITERATIONS) {
+                        aiStatus = "Iterating $iter/$ITERATE_MAX_ITERATIONS — evaluating layout…"
+                        val iterLayout =
+                            requestAiLayout(
+                                userPrompt = aiPrompt,
+                                walls = footprintWalls,
+                                openings = openings,
+                                catalog = modelCatalog,
+                                currentPlacements = placementController.placedSummaries(),
+                                textureCatalog = availableTextures,
+                                zoneNotes = appliedPlan.zoneNotes,
+                                prePrompt = prePrompt,
+                                planMode = false,
+                                iterate = true,
+                                iteration = iter,
+                                maxIterations = ITERATE_MAX_ITERATIONS,
+                                previousNotes = lastNotes,
+                            )
+                        if (iterLayout.satisfied) {
+                            aiStatus =
+                                buildString {
+                                    append("AI satisfied after $iter iteration(s).")
+                                    iterLayout.notes?.let { append(" $it") }
+                                }
+                            break
+                        }
+                        // Defensive stop: AI didn't say "satisfied" but also returned no
+                        // revision — accept the current layout rather than wiping the room.
+                        if (iterLayout.placements.isEmpty()) {
+                            aiStatus =
+                                buildString {
+                                    append("AI stopped at iteration $iter (no revision).")
+                                    iterLayout.notes?.let { append(" $it") }
+                                }
+                            break
+                        }
+                        val iterTextureNote = applyTextures(iterLayout)
+                        val iterSpawnNote = spawnLayout(iterLayout)
+                        aiStatus =
+                            buildString {
+                                append("Iter $iter/$ITERATE_MAX_ITERATIONS: ")
+                                append(iterSpawnNote)
+                                append(iterTextureNote)
+                                iterLayout.notes?.let { append(" $it") }
+                            }
+                        lastNotes = iterLayout.notes
+                        iter += 1
+                    }
+                }
             } catch (error: AiArrangeException) {
                 aiStatus = "AI error: ${error.message}"
             } catch (error: Exception) {
@@ -641,7 +779,7 @@ fun HomeStage() {
             // Closer to the user since only one panel shows at a time.
             attachments.entity(id = "main-panel")?.apply {
                 components[TransformComponent::class.java]?.setPosition(
-                    Vector3(0f, 1.3f, -1.0f)
+                    Vector3(0f, 1.3f, -0.5f)
                 )
                 content.addEntity(this)
             }
@@ -703,7 +841,7 @@ fun HomeStage() {
             if (
                 rigHmdPos != null && rigHmdRot != null &&
                     (rigNow - aimState.hmdUpdatedAt <= AIM_SOURCE_STALE_MS || uiRig.eye == null) &&
-                    rigNow - uiRig.lastUpdateAt >= HUD_UPDATE_INTERVAL_MS
+                    rigNow - uiRig.lastUpdateAt >= UI_RIG_UPDATE_INTERVAL_MS
             ) {
                 val rawFwd = rigHmdRot.rotateVector(Vector3(0f, 0f, -1f))
                 val flatLen = kotlin.math.hypot(rawFwd.x.toDouble(), rawFwd.z.toDouble()).toFloat()
@@ -721,23 +859,26 @@ fun HomeStage() {
                                 (curFwd.x * gazeFwd.x + curFwd.z * gazeFwd.z).coerceIn(-1f, 1f)
                             Math.toDegrees(kotlin.math.acos(dot).toDouble()).toFloat()
                         }
-                    if (moveDist > UI_RIG_MIN_MOVE_METERS || turnDeg > UI_RIG_MIN_YAW_DEGREES) {
+                    // No yaw dead zone: a 3° yaw dead zone (the old UI_RIG_MIN_YAW_DEGREES)
+                    // left the panel fixed in world space during small rotations, so it
+                    // swung to the side (appearing farther) then jumped back to center
+                    // (appearing closer) once the threshold was crossed — reading as an
+                    // ellipse. Now we always update when the timer fires. A tiny position
+                    // dead zone stays to avoid sub-millimeter walking jitter.
+                    if (moveDist > UI_RIG_MIN_MOVE_METERS || true) {
                         val snap =
                             curEye == null || curFwd == null ||
                                 moveDist > HUD_SNAP_DISTANCE_METERS || turnDeg > UI_RIG_SNAP_YAW_DEGREES
                         if (snap && curEye == null) {
                             Log.w(TAG, "ui rig: anchored to view")
                         }
-                        val eye = if (snap) rigHmdPos else curEye + (rigHmdPos - curEye) * 0.35f
-                        val fwd =
-                            if (snap) {
-                                gazeFwd
-                            } else {
-                                val lx = curFwd.x + (gazeFwd.x - curFwd.x) * 0.35f
-                                val lz = curFwd.z + (gazeFwd.z - curFwd.z) * 0.35f
-                                val l = kotlin.math.hypot(lx.toDouble(), lz.toDouble()).toFloat()
-                                if (l > 1e-4f) Vector3(lx / l, 0f, lz / l) else gazeFwd
-                            }
+                        // Position AND yaw track the head 1:1 — no smoothing. Smoothing
+                        // either one causes problems: lerping position makes the panel
+                        // lag behind walking (changing apparent distance), and lerping
+                        // yaw while tracking position 1:1 makes the panel trace an
+                        // ellipse when rotating (head sways, forward lags).
+                        val eye = rigHmdPos
+                        val fwd = gazeFwd
                         uiRig.lastUpdateAt = rigNow
                         uiRig.eye = eye
                         uiRig.forward = fwd
@@ -765,9 +906,9 @@ fun HomeStage() {
                         // Single main panel centered and closer (only one shows at a time),
                         // so the UI is easier to read. Launcher stays below.
                         if (uiOpen) {
-                            placePanel("main-panel", 1.0f, 0f, -0.2f)
+                            placePanel("main-panel", 0.5f, 0f, -0.2f)
                         }
-                        placePanel("ui-launcher", 1.05f, 0f, -0.78f)
+                        placePanel("ui-launcher", 0.55f, 0f, -0.78f)
                     }
                 }
             }
@@ -784,13 +925,18 @@ fun HomeStage() {
                     val hmdRot = aimState.hmdRotation
                     if (hmdPos != null && hmdRot != null) {
                         val now = System.currentTimeMillis()
-                        if (now - hudFollow.lastUpdateAt >= HUD_UPDATE_INTERVAL_MS) {
+                        // Snap the HUD to the target the first time it's shown (when
+                        // hudFollow.position is null) so it appears where the user is
+                        // looking immediately, instead of lingering at its initial
+                        // world-origin spawn position for a few frames.
+                        val firstShow = hudFollow.position == null
+                        if (firstShow || now - hudFollow.lastUpdateAt >= HUD_UPDATE_INTERVAL_MS) {
                             val forward = hmdRot.rotateVector(Vector3(0f, 0f, -1f))
                             val target =
                                 Vector3(
-                                    hmdPos.x + forward.x * 1.1f,
+                                    hmdPos.x + forward.x * 0.5f,
                                     hmdPos.y - 0.2f,
-                                    hmdPos.z + forward.z * 1.1f,
+                                    hmdPos.z + forward.z * 0.5f,
                                 )
                             val targetYaw = yawFacingUserDegrees(target, hmdPos)
                             val current = hudFollow.position
@@ -807,10 +953,10 @@ fun HomeStage() {
                                     current + (target - current) * 0.35f
                                 }
                             val nextYaw = lerpAngleDegrees(hudFollow.yaw, targetYaw, 0.35f)
-                            if (
+                            if (firstShow ||
                                 distance > HUD_MIN_MOVE_METERS ||
-                                    angleDeltaDegrees(hudFollow.yaw, targetYaw) >
-                                        HUD_MIN_YAW_DEGREES
+                                angleDeltaDegrees(hudFollow.yaw, targetYaw) >
+                                    HUD_MIN_YAW_DEGREES
                             ) {
                                 hudFollow.lastUpdateAt = now
                                 hudFollow.position = next
@@ -822,6 +968,11 @@ fun HomeStage() {
                             }
                         }
                     }
+                } else {
+                    // Reset follow state when hiding so the next show snaps fresh.
+                    hudFollow.position = null
+                    hudFollow.yaw = 0f
+                    hudFollow.lastUpdateAt = 0L
                 }
             }
 
@@ -941,8 +1092,8 @@ fun HomeStage() {
                             roomAvailable = roomAvailable,
                             expanded = editorExpanded,
                             status = status,
-                            roomPositionX = roomNavigationPosition.x,
-                            roomPositionZ = roomNavigationPosition.z,
+                            availableTextures = availableTextures,
+                            selectedTextures = selectedTextures,
                             onPlanChange = { draftPlan = it },
                             onApplyPlan = {
                                 roomNavigationPosition = RoomNavigationPosition()
@@ -950,27 +1101,25 @@ fun HomeStage() {
                                 applyRevision += 1
                             },
                             onEnvironmentSelected = { selectedEnvironment = it },
-                            onMoveInRoom = { deltaX, deltaZ ->
-                                roomNavigationPosition =
-                                    RoomNavigationPosition(
-                                        x =
-                                            (roomNavigationPosition.x + deltaX)
-                                                .coerceIn(
-                                                    -ROOM_NAVIGATION_LIMIT_METERS,
-                                                    ROOM_NAVIGATION_LIMIT_METERS,
-                                                ),
-                                        z =
-                                            (roomNavigationPosition.z + deltaZ)
-                                                .coerceIn(
-                                                    -ROOM_NAVIGATION_LIMIT_METERS,
-                                                    ROOM_NAVIGATION_LIMIT_METERS,
-                                                ),
-                                    )
-                                selectedEnvironment = AppEnvironment.ROOM
+                            onTextureSlotChange = { slot, name ->
+                                selectedTextures =
+                                    if (name == null) {
+                                        selectedTextures - slot
+                                    } else {
+                                        selectedTextures + (slot to name)
+                                    }
                             },
-                            onResetRoomPosition = {
-                                roomNavigationPosition = RoomNavigationPosition()
-                                selectedEnvironment = AppEnvironment.ROOM
+                            onApplyTextures = {
+                                scope.launch {
+                                    aiStatus = "Applying textures…"
+                                    roomTextures =
+                                        resolveRoomTextures(
+                                            selectedTextures,
+                                            availableTextures,
+                                            textureCache,
+                                        )
+                                    applyRevision += 1
+                                }
                             },
                             onExpandedChange = { editorExpanded = it },
                         )
@@ -1035,30 +1184,14 @@ fun HomeStage() {
                             aiBusy = aiBusy,
                             aiStatus = aiStatus,
                             roomAvailable = roomAvailable,
+                            advancedThinking = advancedThinking,
+                            planMode = planMode,
+                            iterateMode = iterateMode,
+                            onAdvancedThinkingChange = { advancedThinking = it },
+                            onPlanModeChange = { planMode = it },
+                            onIterateModeChange = { iterateMode = it },
                             onAiPromptChange = { aiPrompt = it },
                             onArrangeWithAi = runAiArrange,
-                            availableTextures = availableTextures,
-                            selectedTextures = selectedTextures,
-                            onTextureSlotChange = { slot, name ->
-                                selectedTextures =
-                                    if (name == null) {
-                                        selectedTextures - slot
-                                    } else {
-                                        selectedTextures + (slot to name)
-                                    }
-                            },
-                            onApplyTextures = {
-                                scope.launch {
-                                    aiStatus = "Applying textures…"
-                                    roomTextures =
-                                        resolveRoomTextures(
-                                            selectedTextures,
-                                            availableTextures,
-                                            textureCache,
-                                        )
-                                    applyRevision += 1
-                                }
-                            },
                         )
                     }
                 }

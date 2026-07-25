@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "type": "surface_texture",
+  "identity": { "id": "marble-floor", "name": "Marble floor", "source": "PolyHaven CC0 (marble_01)" },
+  "classification": { "surfaces": ["floor"], "styles": ["modern", "luxury", "hotel"] },
+  "maps": { "base_color": "marble-floor.jpg", "normal": null },
+  "tiling": { "meters_per_tile": 1.0 },
+  "material": { "roughness": 0.35, "metallic": 0.05 },
+  "notes": null
+}

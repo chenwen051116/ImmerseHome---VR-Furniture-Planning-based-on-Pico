@@ -150,13 +150,13 @@ internal fun FloorPlanExperiencePanel(
     roomAvailable: Boolean,
     expanded: Boolean,
     status: String,
-    roomPositionX: Float,
-    roomPositionZ: Float,
+    availableTextures: List<TextureSpec>,
+    selectedTextures: Map<SurfaceSlot, String?>,
     onPlanChange: (FloorPlan) -> Unit,
     onApplyPlan: () -> Unit,
     onEnvironmentSelected: (AppEnvironment) -> Unit,
-    onMoveInRoom: (deltaX: Float, deltaZ: Float) -> Unit,
-    onResetRoomPosition: () -> Unit,
+    onTextureSlotChange: (SurfaceSlot, String?) -> Unit,
+    onApplyTextures: () -> Unit,
     onExpandedChange: (Boolean) -> Unit,
 ) {
     if (!expanded) {
@@ -165,11 +165,11 @@ internal fun FloorPlanExperiencePanel(
             showcaseAvailable = showcaseAvailable,
             roomAvailable = roomAvailable,
             status = status,
-            roomPositionX = roomPositionX,
-            roomPositionZ = roomPositionZ,
+            availableTextures = availableTextures,
+            selectedTextures = selectedTextures,
             onEnvironmentSelected = onEnvironmentSelected,
-            onMoveInRoom = onMoveInRoom,
-            onResetRoomPosition = onResetRoomPosition,
+            onTextureSlotChange = onTextureSlotChange,
+            onApplyTextures = onApplyTextures,
             onEditPlan = { onExpandedChange(true) },
         )
         return
@@ -199,18 +199,19 @@ private fun CompactEnvironmentPanel(
     showcaseAvailable: Boolean,
     roomAvailable: Boolean,
     status: String,
-    roomPositionX: Float,
-    roomPositionZ: Float,
+    availableTextures: List<TextureSpec>,
+    selectedTextures: Map<SurfaceSlot, String?>,
     onEnvironmentSelected: (AppEnvironment) -> Unit,
-    onMoveInRoom: (deltaX: Float, deltaZ: Float) -> Unit,
-    onResetRoomPosition: () -> Unit,
+    onTextureSlotChange: (SurfaceSlot, String?) -> Unit,
+    onApplyTextures: () -> Unit,
     onEditPlan: () -> Unit,
 ) {
     Column(
         modifier =
-            Modifier.size(560.dp, 430.dp)
+            Modifier.size(560.dp, 520.dp)
                 .clip(RoundedCornerShape(20.dp))
                 .backgroundMaterial(true, Material.Regular)
+                .verticalScroll(rememberScrollState())
                 .padding(26.dp),
     ) {
         Text(
@@ -247,57 +248,14 @@ private fun CompactEnvironmentPanel(
             color = Color(0xCCFFFFFF),
         )
         Spacer(Modifier.height(14.dp))
-        Text(
-            text = "Virtual walk · 0.5 m per step",
-            style = PicoTheme.typography.displaySmall,
-            fontSize = 20.sp,
-            color = Color.White,
-        )
-        Text(
-            text =
-                "Room position  X ${formatMeters(roomPositionX)}  ·  Z ${formatMeters(roomPositionZ)}",
-            style = PicoTheme.typography.titleMedium,
-            fontSize = 14.sp,
-            color = Color(0xCCFFFFFF),
-        )
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            NavigationButton(
-                label = "← Left",
-                enabled = roomAvailable,
-                onClick = { onMoveInRoom(-PLAN_GRID_STEP_METERS, 0f) },
-            )
-            NavigationButton(
-                label = "Forward ↑",
-                enabled = roomAvailable,
-                onClick = { onMoveInRoom(0f, -PLAN_GRID_STEP_METERS) },
-            )
-            NavigationButton(
-                label = "Right →",
-                enabled = roomAvailable,
-                onClick = { onMoveInRoom(PLAN_GRID_STEP_METERS, 0f) },
-            )
-        }
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            NavigationButton(
-                label = "Back ↓",
-                enabled = roomAvailable,
-                onClick = { onMoveInRoom(0f, PLAN_GRID_STEP_METERS) },
-            )
-            NavigationButton(
-                label = "Reset center",
-                enabled = roomAvailable,
-                onClick = onResetRoomPosition,
-            )
-        }
-        Spacer(Modifier.height(9.dp))
-        Text(
-            text =
-                "Use these controls to explore. Emulator W/A/S/D moves the headset and triggers PICO's safeguard fade.",
-            style = PicoTheme.typography.titleMedium,
-            fontSize = 13.sp,
-            color = Color(0xCCFFFFFF),
+        // Surface-texture reskin card, moved here from the AI Arrange panel (it replaces the
+        // old virtual-walk controls that used to occupy this space).
+        TexturesCard(
+            availableTextures = availableTextures,
+            selectedTextures = selectedTextures,
+            roomAvailable = roomAvailable,
+            onTextureSlotChange = onTextureSlotChange,
+            onApplyTextures = onApplyTextures,
         )
     }
 }
@@ -1208,20 +1166,6 @@ internal fun EnvironmentButton(
         enabled = enabled,
         onClick = onClick,
         modifier = Modifier.width(142.dp),
-    )
-}
-
-@Composable
-private fun NavigationButton(
-    label: String,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
-    GlassButton(
-        text = label,
-        enabled = enabled,
-        onClick = onClick,
-        modifier = Modifier.width(158.dp),
     )
 }
 

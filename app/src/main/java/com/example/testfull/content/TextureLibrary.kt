@@ -49,9 +49,24 @@ internal data class TextureSpec(
 
 internal val SUPPORTED_TEXTURE_EXTENSIONS = setOf("png", "jpg", "jpeg", "webp")
 
+/** Model extensions whose same-named image is a furniture PREVIEW, not a texture. */
+private val MODEL_EXTENSIONS = setOf("glb", "gltf")
+
 internal fun isSupportedTextureFile(fileName: String): Boolean {
     val extension = fileName.substringAfterLast('.', "").lowercase(Locale.US)
     return extension in SUPPORTED_TEXTURE_EXTENSIONS
+}
+
+/**
+ * True when [imageFile] is a furniture preview, not a standalone texture: a model file with the
+ * same base name sits next to it (e.g. bed001.png next to bed001.glb). Those images are loaded
+ * by the furniture card previewer and must not appear in the texture reskin list.
+ */
+private fun isFurniturePreview(imageFile: File): Boolean {
+    val base = imageFile.nameWithoutExtension
+    return MODEL_EXTENSIONS.any { ext ->
+        File(imageFile.parentFile, "$base.$ext").isFile
+    }
 }
 
 /** Parses one texture entry: image file + optional same-name sidecar JSON (raw text). */
@@ -114,6 +129,9 @@ internal fun scanTexturesIn(directory: File): List<TextureSpec> {
         .filter { it.isFile && isSupportedTextureFile(it.name) }
         // A "<base>_n" file is a normal map companion, not a standalone texture.
         .filter { !it.nameWithoutExtension.endsWith("_n") }
+        // Skip furniture preview images: a same-named .glb/.gltf means this PNG is the
+        // card preview for that model, not a wall/floor texture.
+        .filter { !isFurniturePreview(it) }
         .sortedBy { it.name.lowercase(Locale.US) }
         .map { image ->
             val sidecar = File(image.parentFile, image.nameWithoutExtension + ".json")
