@@ -48,6 +48,15 @@ private class HudFollowState {
     var lastUpdateAt: Long = 0L
 }
 
+/** Smoothed pose of the view-following UI rig (main panels + launcher). */
+private class UiRigFollowState {
+    var eye: Vector3? = null
+    var forward: Vector3? = null
+    var lastUpdateAt: Long = 0L
+    var lastUiOpen: Boolean = true
+    var loggedHmdPose: Boolean = false
+}
+
 /** Shortest-arc interpolation between two yaw angles, in degrees. */
 private fun lerpAngleDegrees(from: Float, to: Float, t: Float): Float {
     var delta = (to - from) % 360f
@@ -70,6 +79,13 @@ private const val HUD_UPDATE_INTERVAL_MS = 150L
 private const val HUD_SNAP_DISTANCE_METERS = 0.6f
 private const val HUD_MIN_MOVE_METERS = 0.02f
 private const val HUD_MIN_YAW_DEGREES = 2f
+
+// The whole UI rig glues itself to the user's view (yaw only, like an AR panel). Every moved
+// panel redraws its surface, so the rig gets a slightly larger dead zone than the single
+// placement HUD, and snaps instantly on big turns instead of lagging behind.
+private const val UI_RIG_MIN_MOVE_METERS = 0.03f
+private const val UI_RIG_MIN_YAW_DEGREES = 3f
+private const val UI_RIG_SNAP_YAW_DEGREES = 40f
 
 /** Thread-safe slot for the latest tracking data; providers post off the main thread. */
 private class AimState {
@@ -185,6 +201,8 @@ fun HomeStage() {
     var roomAvailable by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Building room…") }
     var editorExpanded by remember { mutableStateOf(true) }
+    // The launcher icon folds every main panel away (or opens them all) with one tap.
+    var uiOpen by remember { mutableStateOf(true) }
     var draftPlan by remember { mutableStateOf(demoFloorPlan()) }
     var appliedPlan by remember { mutableStateOf(draftPlan) }
     var applyRevision by remember { mutableIntStateOf(0) }
@@ -198,6 +216,10 @@ fun HomeStage() {
     val placementController = remember { PlacementController() }
     val aimState = remember { AimState() }
     val hudFollow = remember { HudFollowState() }
+    val uiRig = remember { UiRigFollowState() }
+    // Drives the view-following rig: SpatialView's update lambda only re-runs when a state it
+    // reads changes, so this ticker keeps the rig tracking the head between clicks.
+    var rigTick by remember { mutableIntStateOf(0) }
     val controllerProvider = remember { ControllerTrackingProvider() }
     val hmdProvider = remember { HMDTrackingProvider() }
     var availableModels by remember { mutableStateOf<List<LibraryModel>>(emptyList()) }
@@ -376,14 +398,28 @@ fun HomeStage() {
         true
     }
 
+    // HMD tracking runs all the time: the whole UI rig follows the user's view, not just the
+    // placement ghost. Controller tracking is only needed while placing.
+    DisposableEffect(Unit) {
+        hmdProvider.start()
+        onDispose { hmdProvider.stop() }
+    }
+
+    // Rig ticker: nudges the SpatialView update loop ~10x/s so the view-following rig keeps
+    // tracking the head. The rig itself rate-limits and dead-zones actual panel moves.
+    LaunchedEffect(Unit) {
+        while (true) {
+            rigTick += 1
+            delay(100)
+        }
+    }
+
     DisposableEffect(placementActive) {
         if (placementActive) {
             controllerProvider.start()
-            hmdProvider.start()
         }
         onDispose {
             controllerProvider.stop()
-            hmdProvider.stop()
             placementController.hideGhost()
         }
     }
@@ -469,6 +505,10 @@ fun HomeStage() {
                     Log.w(TAG, "debug hook: prompt file -> \"$prompt\"")
                     when {
                         prompt.isEmpty() -> Unit
+                        prompt == "ui:toggle" -> {
+                            uiOpen = !uiOpen
+                            Log.w(TAG, "debug hook: uiOpen -> $uiOpen")
+                        }
                         // "place:<name>" simulates picking a model: selects it and turns
                         // placing on (drives the view-following placement HUD without a
                         // controller).
@@ -569,7 +609,7 @@ fun HomeStage() {
                     else -> "The room could not be generated."
                 }
 
-            listOf("room-plan", "furniture-library", "ai-arrange", "placement-hud").forEach {
+            listOf("room-plan", "furniture-library", "ai-arrange", "placement-hud", "ui-launcher").forEach {
                 Log.w(TAG, "attachment entity($it) = ${attachments.entity(id = it) != null}")
             }
             attachments.entity(id = "room-plan")?.apply {
@@ -592,6 +632,12 @@ fun HomeStage() {
                 }
                 content.addEntity(this)
             }
+            attachments.entity(id = "ui-launcher")?.apply {
+                components[TransformComponent::class.java]?.setPosition(
+                    Vector3(0f, 0.82f, -1.05f)
+                )
+                content.addEntity(this)
+            }
             // The placement HUD starts hidden; the update loop shows it and glues it to the
             // user's view while placing.
             attachments.entity(id = "placement-hud")?.apply {
@@ -603,6 +649,118 @@ fun HomeStage() {
             }
         },
         update = { content, attachments ->
+            // The launcher folds/opens every main panel at once. The placement HUD keeps its
+            // own visibility rules (it only exists while placing) and the launcher itself
+            // stays visible so the interface can always be reopened.
+            listOf("room-plan", "furniture-library", "ai-arrange").forEach { panelId ->
+                attachments.entity(id = panelId)?.let { panel ->
+                    if (panel.enabled != uiOpen) panel.enabled = uiOpen
+                }
+            }
+
+            // --- View-following UI rig ---
+            // All panels keep their formation relative to the user's gaze: room plan straight
+            // ahead, library/AI at ±30°, launcher below. Yaw only — following pitch would be
+            // nauseating. When the interface is folded, only the launcher follows.
+            // Reading rigTick subscribes this block to the 100 ms ticker — without it the
+            // rig would only re-evaluate when some unrelated state changes (e.g. a click).
+            val rigTickObserved = rigTick
+            val rigHmdPos = aimState.hmdPosition
+            val rigHmdRot = aimState.hmdRotation
+            val rigNow = System.currentTimeMillis()
+            if (rigTickObserved % 50 == 0) {
+                Log.w(
+                    TAG,
+                    "ui rig: alive tick=$rigTickObserved" +
+                        " hmdAge=${rigNow - aimState.hmdUpdatedAt}ms anchored=${uiRig.eye != null}",
+                )
+            }
+            if (uiRig.lastUiOpen != uiOpen) {
+                uiRig.lastUiOpen = uiOpen
+                // Force a snap so reopened panels land in front of the user instead of where
+                // they were when folded away.
+                uiRig.eye = null
+                uiRig.forward = null
+            }
+            if (rigHmdPos != null && rigHmdRot != null && !uiRig.loggedHmdPose) {
+                uiRig.loggedHmdPose = true
+                Log.w(TAG, "ui rig: hmd pose flowing pos=$rigHmdPos")
+            }
+            // Freshness is required only for *tracking*; the very first anchor is allowed to
+            // use the last known pose, however old, so the rig always lands in front of the
+            // user at least once.
+            if (
+                rigHmdPos != null && rigHmdRot != null &&
+                    (rigNow - aimState.hmdUpdatedAt <= AIM_SOURCE_STALE_MS || uiRig.eye == null) &&
+                    rigNow - uiRig.lastUpdateAt >= HUD_UPDATE_INTERVAL_MS
+            ) {
+                val rawFwd = rigHmdRot.rotateVector(Vector3(0f, 0f, -1f))
+                val flatLen = kotlin.math.hypot(rawFwd.x.toDouble(), rawFwd.z.toDouble()).toFloat()
+                if (flatLen > 1e-4f) {
+                    val gazeFwd = Vector3(rawFwd.x / flatLen, 0f, rawFwd.z / flatLen)
+                    val curEye = uiRig.eye
+                    val curFwd = uiRig.forward
+                    val moveDist =
+                        if (curEye == null) Float.MAX_VALUE else (rigHmdPos - curEye).length()
+                    val turnDeg =
+                        if (curFwd == null) {
+                            Float.MAX_VALUE
+                        } else {
+                            val dot =
+                                (curFwd.x * gazeFwd.x + curFwd.z * gazeFwd.z).coerceIn(-1f, 1f)
+                            Math.toDegrees(kotlin.math.acos(dot).toDouble()).toFloat()
+                        }
+                    if (moveDist > UI_RIG_MIN_MOVE_METERS || turnDeg > UI_RIG_MIN_YAW_DEGREES) {
+                        val snap =
+                            curEye == null || curFwd == null ||
+                                moveDist > HUD_SNAP_DISTANCE_METERS || turnDeg > UI_RIG_SNAP_YAW_DEGREES
+                        if (snap && curEye == null) {
+                            Log.w(TAG, "ui rig: anchored to view")
+                        }
+                        val eye = if (snap) rigHmdPos else curEye + (rigHmdPos - curEye) * 0.35f
+                        val fwd =
+                            if (snap) {
+                                gazeFwd
+                            } else {
+                                val lx = curFwd.x + (gazeFwd.x - curFwd.x) * 0.35f
+                                val lz = curFwd.z + (gazeFwd.z - curFwd.z) * 0.35f
+                                val l = kotlin.math.hypot(lx.toDouble(), lz.toDouble()).toFloat()
+                                if (l > 1e-4f) Vector3(lx / l, 0f, lz / l) else gazeFwd
+                            }
+                        uiRig.lastUpdateAt = rigNow
+                        uiRig.eye = eye
+                        uiRig.forward = fwd
+                        // left = up × forward (x points right when facing -z)
+                        val left = Vector3(fwd.z, 0f, -fwd.x)
+
+                        fun placePanel(id: String, ahead: Float, side: Float, dy: Float) {
+                            attachments.entity(id = id)?.let { panel ->
+                                if (!panel.enabled) return@let
+                                val target =
+                                    Vector3(
+                                        eye.x + fwd.x * ahead + left.x * side,
+                                        eye.y + dy,
+                                        eye.z + fwd.z * ahead + left.z * side,
+                                    )
+                                panel.components[TransformComponent::class.java]?.apply {
+                                    setPosition(target)
+                                    setEulerAngles(
+                                        EulerAngles(yaw = yawFacingUserDegrees(target, eye))
+                                    )
+                                }
+                            }
+                        }
+
+                        if (uiOpen) {
+                            placePanel("room-plan", 1.3f, 0f, -0.2f)
+                            placePanel("furniture-library", 1.05f, 0.62f, -0.3f)
+                            placePanel("ai-arrange", 1.05f, -0.62f, -0.3f)
+                        }
+                        placePanel("ui-launcher", 1.05f, 0f, -0.78f)
+                    }
+                }
+            }
+
             // Placement HUD: visible only while placing, floating ahead of the headset so the
             // Drop button is always within reach. Updates are rate-limited with a jitter dead
             // zone — re-posing it every frame keeps its surface redrawing, which trips the
@@ -749,6 +907,15 @@ fun HomeStage() {
             }
         },
         attachments = {
+            AttachmentPanel(id = "ui-launcher") {
+                UiLauncherPanel(
+                    uiOpen = uiOpen,
+                    onToggle = {
+                        uiOpen = !uiOpen
+                        Log.w(TAG, "ui launcher: uiOpen -> $uiOpen")
+                    },
+                )
+            }
             AttachmentPanel(id = "room-plan") {
                 FloorPlanExperiencePanel(
                     plan = draftPlan,

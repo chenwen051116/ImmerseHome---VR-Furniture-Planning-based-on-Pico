@@ -3,6 +3,8 @@ package com.example.testfull.content
 import android.graphics.Paint as NativePaint
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitTouchSlopOrCancellation
@@ -10,6 +12,7 @@ import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -46,8 +49,6 @@ import com.pico.spatial.ui.design.NumberField
 import com.pico.spatial.ui.design.NumberFieldDefaults
 import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.design.Text
-import com.pico.spatial.ui.design.ToggleButton
-import com.pico.spatial.ui.design.ToggleButtonDefaults
 import com.pico.spatial.ui.foundation.material.backgroundMaterial
 import com.pico.spatial.ui.platform.Material
 import java.util.Locale
@@ -77,6 +78,49 @@ private enum class SelectionKind {
 private data class PlanSelection(val kind: SelectionKind, val id: Int)
 
 private const val MAX_LISTED_MODELS = 6
+
+// Figma "Room plan" design tokens.
+private val FigPrimaryText = Color(0xFF3C2015) // dark brown labels on glass
+private val FigGlassText = Color(0xFFEEEEEE) // button text on glass
+private val FigGlassTextDim = Color(0x99EEEEEE) // disabled button text
+private val FigAccent = Color(0xFFFF9165) // orange selection/active accent
+private val FigGlassBg = Color(0x3DFFFFFF) // rgba(255,255,255,0.24) frosted button fill
+private val FigGlassBgActive = Color(0x66FFFFFF) // active/selected button fill
+private val FigLabelMuted = Color(0x993C2015) // muted dark-brown secondary text
+
+/**
+ * Frosted-glass pill button matching the Figma "Room plan" tool buttons
+ * (Select/Wall/Door/Window, showcase/Room/Hide, Demo/Clear, etc.).
+ * Approximates backdrop-blur with a semi-transparent white fill.
+ */
+@Composable
+private fun GlassButton(
+    text: String,
+    selected: Boolean = false,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    fontSize: androidx.compose.ui.unit.TextUnit = 16.sp,
+) {
+    val bg = if (!enabled) Color(0x1AFFFFFF) else if (selected) FigGlassBgActive else FigGlassBg
+    val textColor = if (!enabled) FigGlassTextDim else if (selected) Color.White else FigGlassText
+    Box(
+        modifier =
+            modifier
+                .clip(RoundedCornerShape(6.dp))
+                .background(bg)
+                .clickable(enabled = enabled, onClick = onClick)
+                .padding(horizontal = 20.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = PicoTheme.typography.titleMedium,
+            fontSize = fontSize,
+            color = textColor,
+        )
+    }
+}
 
 private data class PlanCanvasTransform(
     val size: Size,
@@ -173,6 +217,7 @@ private fun CompactEnvironmentPanel(
             text = "Environment",
             style = PicoTheme.typography.displaySmall,
             fontSize = 25.sp,
+            color = Color.White,
         )
         Spacer(Modifier.height(14.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -188,33 +233,32 @@ private fun CompactEnvironmentPanel(
                 enabled = roomAvailable,
                 onClick = { onEnvironmentSelected(AppEnvironment.ROOM) },
             )
-            Button(
+            GlassButton(
+                text = "Edit plan",
                 onClick = onEditPlan,
-                size = ButtonDefaults.Max,
                 modifier = Modifier.width(142.dp),
-            ) {
-                Text("Edit plan")
-            }
+            )
         }
         Spacer(Modifier.height(13.dp))
         Text(
             text = status,
             style = PicoTheme.typography.titleMedium,
             fontSize = 15.sp,
-            color = Color(0x99000000),
+            color = Color(0xCCFFFFFF),
         )
         Spacer(Modifier.height(14.dp))
         Text(
             text = "Virtual walk · 0.5 m per step",
             style = PicoTheme.typography.displaySmall,
             fontSize = 20.sp,
+            color = Color.White,
         )
         Text(
             text =
                 "Room position  X ${formatMeters(roomPositionX)}  ·  Z ${formatMeters(roomPositionZ)}",
             style = PicoTheme.typography.titleMedium,
             fontSize = 14.sp,
-            color = Color(0x99000000),
+            color = Color(0xCCFFFFFF),
         )
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -253,7 +297,7 @@ private fun CompactEnvironmentPanel(
                 "Use these controls to explore. Emulator W/A/S/D moves the headset and triggers PICO's safeguard fade.",
             style = PicoTheme.typography.titleMedium,
             fontSize = 13.sp,
-            color = Color(0x99000000),
+            color = Color(0xCCFFFFFF),
         )
     }
 }
@@ -301,24 +345,31 @@ private fun FloorPlanDesigner(
         ) {
             Column(modifier = Modifier.width(300.dp)) {
                 Text(
-                    text = "Room plan",
+                    text = "Room Plan",
                     style = PicoTheme.typography.displaySmall,
-                    fontSize = 26.sp,
+                    fontSize = 32.sp,
+                    color = Color.White,
                 )
                 Text(
                     text =
                         if (hasUnappliedChanges) {
                             "Draft changed — apply to rebuild the room"
                         } else {
-                            status
+                            "${plan.walls.size} walls · ${plan.openings.size} openings"
                         },
                     style = PicoTheme.typography.titleMedium,
-                    fontSize = 14.sp,
-                    color = Color(0x99000000),
+                    fontSize = 15.sp,
+                    color = Color.White,
+                )
+                Text(
+                    text = "Draw connected wall segments, then place doors and windows directly on them.",
+                    style = PicoTheme.typography.titleMedium,
+                    fontSize = 13.sp,
+                    color = Color(0xCCFFFFFF),
                 )
             }
             EnvironmentButton(
-                label = "Showcase",
+                label = "showcase",
                 selected = selectedEnvironment == AppEnvironment.SHOWCASE,
                 enabled = showcaseAvailable,
                 onClick = { onEnvironmentSelected(AppEnvironment.SHOWCASE) },
@@ -329,13 +380,11 @@ private fun FloorPlanDesigner(
                 enabled = roomAvailable,
                 onClick = { onEnvironmentSelected(AppEnvironment.ROOM) },
             )
-            Button(
+            GlassButton(
+                text = "Hide",
                 onClick = onCollapse,
-                size = ButtonDefaults.Regular,
                 modifier = Modifier.width(126.dp),
-            ) {
-                Text("Hide editor")
-            }
+            )
         }
 
         Spacer(Modifier.height(16.dp))
@@ -361,6 +410,7 @@ private fun FloorPlanDesigner(
                         text = "View zoom",
                         style = PicoTheme.typography.titleMedium,
                         fontSize = 14.sp,
+                        color = FigPrimaryText,
                         modifier = Modifier.width(90.dp),
                     )
                     NumberField(
@@ -372,21 +422,20 @@ private fun FloorPlanDesigner(
                         unit = "%",
                         fractionDigits = 0,
                     )
-                    Button(
+                    GlassButton(
+                        text = "Fit",
                         onClick = {
                             canvasZoom = 1f
                             referenceBounds = plan.bounds()
                         },
-                        size = ButtonDefaults.Small,
                         modifier = Modifier.width(110.dp),
-                    ) {
-                        Text("Fit")
-                    }
+                        fontSize = 14.sp,
+                    )
                     Text(
                         text = "Grid 0.50 m · drag corner points · units: meters",
                         style = PicoTheme.typography.titleMedium,
                         fontSize = 13.sp,
-                        color = Color(0x99000000),
+                        color = FigLabelMuted,
                     )
                 }
                 Spacer(Modifier.height(8.dp))
@@ -484,7 +533,7 @@ private fun FloorPlanDesigner(
                         },
                     style = PicoTheme.typography.titleMedium,
                     fontSize = 14.sp,
-                    color = Color(0x99000000),
+                    color = FigLabelMuted,
                 )
             }
 
@@ -655,7 +704,7 @@ private fun PlanCanvas(
             val selected =
                 selection?.kind == SelectionKind.WALL && selection.id == wall.id
             drawLine(
-                color = if (selected) Color(0xFFFF7457) else Color(0xFFD4D9DF),
+                color = if (selected) Color(0xFFFF9165) else Color(0xFFD4D9DF),
                 start = transform.toScreen(wall.start),
                 end = transform.toScreen(wall.end),
                 strokeWidth = max(5f, wall.thickness * transform.pixelsPerMeter),
@@ -709,7 +758,7 @@ private fun PlanCanvas(
                     center = center,
                 )
                 drawCircle(
-                    color = if (isDragged) Color(0xFFFF7457) else Color(0xFFF1F4F7),
+                    color = if (isDragged) Color(0xFFFF9165) else Color(0xFFF1F4F7),
                     radius = if (isDragged) 8f else 6f,
                     center = center,
                 )
@@ -718,7 +767,7 @@ private fun PlanCanvas(
 
         pendingWallStart?.let {
             drawCircle(
-                color = Color(0xFFFF7457),
+                color = Color(0xFFFF9165),
                 radius = 8f,
                 center = transform.toScreen(it),
             )
@@ -850,6 +899,7 @@ private fun Inspector(
                 },
             style = PicoTheme.typography.displaySmall,
             fontSize = 21.sp,
+            color = FigPrimaryText,
         )
         Spacer(Modifier.height(10.dp))
 
@@ -995,14 +1045,14 @@ private fun Inspector(
                 text = "${plan.walls.size} walls · ${plan.openings.size} openings",
                 style = PicoTheme.typography.titleMedium,
                 fontSize = 15.sp,
-                color = Color(0x99000000),
+                color = FigLabelMuted,
             )
             Spacer(Modifier.height(8.dp))
             Text(
                 text = "Draw connected wall segments, then place doors and windows directly on them.",
                 style = PicoTheme.typography.titleMedium,
                 fontSize = 14.sp,
-                color = Color(0x99000000),
+                color = FigLabelMuted,
             )
             Spacer(Modifier.height(8.dp))
             DimensionField(
@@ -1039,7 +1089,8 @@ private fun Inspector(
 
         Spacer(Modifier.height(12.dp))
         if (wall != null || opening != null) {
-            Button(
+            GlassButton(
+                text = "Delete selected",
                 onClick = {
                     val next =
                         if (wall != null) {
@@ -1057,38 +1108,43 @@ private fun Inspector(
                     onPlanChange(next)
                     onSelectionChange(null)
                 },
-                size = ButtonDefaults.Small,
                 modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Delete selected")
-            }
+                fontSize = 14.sp,
+            )
             Spacer(Modifier.height(9.dp))
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
+            GlassButton(
+                text = "Demo",
                 onClick = onDemo,
-                size = ButtonDefaults.Small,
                 modifier = Modifier.width(126.dp),
-            ) {
-                Text("Reset 15×8")
-            }
-            Button(
+                fontSize = 14.sp,
+            )
+            GlassButton(
+                text = "Clear",
                 onClick = onClear,
-                size = ButtonDefaults.Small,
                 modifier = Modifier.width(126.dp),
-            ) {
-                Text("Clear")
-            }
+                fontSize = 14.sp,
+            )
         }
         Spacer(Modifier.height(10.dp))
-        Button(
-            onClick = onApply,
-            enabled = applyEnabled,
-            size = ButtonDefaults.Max,
-            modifier = Modifier.fillMaxWidth(),
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (applyEnabled) Color(0xFF7C7C7C) else Color(0x337C7C7C))
+                    .clickable(enabled = applyEnabled, onClick = onApply)
+                    .padding(horizontal = 24.dp, vertical = 12.dp),
+            contentAlignment = Alignment.Center,
         ) {
-            Text("Apply & preview room")
+            Text(
+                text = "Apply & preview room",
+                style = PicoTheme.typography.titleMedium,
+                fontSize = 18.sp,
+                color = Color.White,
+            )
         }
 
     }
@@ -1110,6 +1166,7 @@ internal fun DimensionField(
             text = label,
             style = PicoTheme.typography.titleMedium,
             fontSize = 14.sp,
+            color = FigPrimaryText,
         )
         Spacer(Modifier.height(4.dp))
         NumberField(
@@ -1130,14 +1187,12 @@ private fun OpeningTypeButton(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    ToggleButton(
-        checked = selected,
-        onCheckedChange = { checked -> if (checked) onClick() },
-        size = ToggleButtonDefaults.Small,
+    GlassButton(
+        text = label,
+        selected = selected,
+        onClick = onClick,
         modifier = Modifier.width(126.dp),
-    ) {
-        Text(label)
-    }
+    )
 }
 
 @Composable
@@ -1147,15 +1202,13 @@ internal fun EnvironmentButton(
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    ToggleButton(
-        checked = selected,
-        onCheckedChange = { checked -> if (checked) onClick() },
+    GlassButton(
+        text = label,
+        selected = selected,
         enabled = enabled,
-        size = ToggleButtonDefaults.Max,
+        onClick = onClick,
         modifier = Modifier.width(142.dp),
-    ) {
-        Text(label)
-    }
+    )
 }
 
 @Composable
@@ -1164,26 +1217,22 @@ private fun NavigationButton(
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    Button(
-        onClick = onClick,
+    GlassButton(
+        text = label,
         enabled = enabled,
-        size = ButtonDefaults.Small,
+        onClick = onClick,
         modifier = Modifier.width(158.dp),
-    ) {
-        Text(label)
-    }
+    )
 }
 
 @Composable
 private fun ModeButton(label: String, selected: Boolean, onClick: () -> Unit) {
-    ToggleButton(
-        checked = selected,
-        onCheckedChange = { checked -> if (checked) onClick() },
-        size = ToggleButtonDefaults.Regular,
-        modifier = Modifier.width(140.dp),
-    ) {
-        Text(label)
-    }
+    GlassButton(
+        text = label,
+        selected = selected,
+        onClick = onClick,
+        modifier = Modifier.width(120.dp),
+    )
 }
 
 private fun planCanvasTransform(
