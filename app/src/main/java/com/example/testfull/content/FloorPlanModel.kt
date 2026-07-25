@@ -74,45 +74,35 @@ internal data class WallSolid(
 )
 
 /**
- * The starter plan: a normal 三室一厅 (three bedrooms + living room) apartment,
- * 9.6 m × 7.6 m. North row: three bedrooms over a corridor; south half: kitchen
- * (west) and living room (east). Main entrance is on the south wall.
+ * The starter plan: a spacious 一室一卧 (big living room + big bedroom), 12 m × 6 m.
+ * Living room (west, 7×6 m) and bedroom (east, 5×6 m) are joined by a wide open
+ * passage (2.4 m, no door slab). Main entrance is on the living room's south wall;
+ * the living room gets a 3 m picture window on the south wall plus a west window
+ * for cross light; the bedroom gets one north window, leaving its bed wall (north)
+ * free of openings.
  */
 internal fun demoFloorPlan(): FloorPlan =
     FloorPlan(
         walls =
             listOf(
-                PlanWall(1, PlanPoint(-4.8f, -3.8f), PlanPoint(4.8f, -3.8f)),
-                PlanWall(2, PlanPoint(4.8f, -3.8f), PlanPoint(4.8f, 3.8f)),
-                PlanWall(3, PlanPoint(4.8f, 3.8f), PlanPoint(-4.8f, 3.8f)),
-                PlanWall(4, PlanPoint(-4.8f, 3.8f), PlanPoint(-4.8f, -3.8f)),
-                // Bedroom row / corridor divider.
-                PlanWall(5, PlanPoint(-4.8f, -0.6f), PlanPoint(4.8f, -0.6f)),
-                PlanWall(6, PlanPoint(-1.6f, -3.8f), PlanPoint(-1.6f, -0.6f)),
-                PlanWall(7, PlanPoint(1.6f, -3.8f), PlanPoint(1.6f, -0.6f)),
-                // Corridor → kitchen wall, and kitchen / living partition.
-                PlanWall(8, PlanPoint(-4.8f, 0.6f), PlanPoint(-0.8f, 0.6f)),
-                PlanWall(9, PlanPoint(-0.8f, 0.6f), PlanPoint(-0.8f, 3.8f)),
+                PlanWall(1, PlanPoint(-6f, -3f), PlanPoint(6f, -3f)),
+                PlanWall(2, PlanPoint(6f, -3f), PlanPoint(6f, 3f)),
+                PlanWall(3, PlanPoint(6f, 3f), PlanPoint(-6f, 3f)),
+                PlanWall(4, PlanPoint(-6f, 3f), PlanPoint(-6f, -3f)),
+                // Divider at x = 1 with a 2.4 m open passage (z in -0.6..1.8), no door.
+                PlanWall(5, PlanPoint(1f, -3f), PlanPoint(1f, -0.6f)),
+                PlanWall(6, PlanPoint(1f, 1.8f), PlanPoint(1f, 3f)),
             ),
         openings =
             listOf(
-                // Main entrance (south wall, x = 1.0).
-                PlanOpening(1, 3, OpeningType.DOOR, 0.396f, 0.95f, 2.1f, 0f),
-                // Bedroom doors (from the corridor).
-                PlanOpening(2, 5, OpeningType.DOOR, 0.167f, 0.85f, 2.05f, 0f),
-                PlanOpening(3, 5, OpeningType.DOOR, 0.5f, 0.85f, 2.05f, 0f),
-                PlanOpening(4, 5, OpeningType.DOOR, 0.833f, 0.85f, 2.05f, 0f),
-                // Kitchen ↔ corridor, kitchen ↔ living.
-                PlanOpening(5, 8, OpeningType.DOOR, 0.5f, 0.85f, 2.05f, 0f),
-                PlanOpening(6, 9, OpeningType.DOOR, 0.5f, 0.85f, 2.05f, 0f),
-                // Bedroom windows (north wall).
-                PlanOpening(7, 1, OpeningType.WINDOW, 0.167f, 1.2f, 1.1f, 0.9f),
-                PlanOpening(8, 1, OpeningType.WINDOW, 0.5f, 1.2f, 1.1f, 0.9f),
-                PlanOpening(9, 1, OpeningType.WINDOW, 0.833f, 1.2f, 1.1f, 0.9f),
-                // Living-room picture window (south wall, x = 2.0) and kitchen window
-                // (west wall, z = 2.2).
-                PlanOpening(10, 3, OpeningType.WINDOW, 0.292f, 2.2f, 1.2f, 0.8f),
-                PlanOpening(11, 4, OpeningType.WINDOW, 0.21f, 1.2f, 1.1f, 0.9f),
+                // Main entrance — south wall east end of the living room (x = -4.5).
+                PlanOpening(1, 3, OpeningType.DOOR, 0.875f, 0.95f, 2.1f, 0f),
+                // Living room: 3 m picture window on the south wall (x = -2), low sill.
+                PlanOpening(2, 3, OpeningType.WINDOW, 0.667f, 3.0f, 1.6f, 0.6f),
+                // Living room west window for cross light (z = 0).
+                PlanOpening(3, 4, OpeningType.WINDOW, 0.5f, 1.6f, 1.2f, 0.9f),
+                // Bedroom north window (x = 3.5); the bed wall itself stays solid.
+                PlanOpening(4, 1, OpeningType.WINDOW, 0.792f, 1.6f, 1.2f, 0.9f),
             ),
     )
 
