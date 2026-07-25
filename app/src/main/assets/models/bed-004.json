@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-24T16:23:17.928Z",
+  "identity": {
+    "id": "bed-004",
+    "name": "单人盖毯床",
+    "description": "窄型单人床，圆角高床头，床头配两只枕头，床尾可见盖毯折叠细节，灰棕色织物。适配风格：现代简约、宜家、北欧。",
+    "status": "draft"
+  },
+  "classification": {
+    "category": "bed",
+    "room_types": [
+      "bedroom"
+    ]
+  },
+  "asset": {
+    "format": "glb",
+    "glb_url": null,
+    "thumbnail_url": null,
+    "file_size_bytes": null,
+    "sha256": null
+  },
+  "source_and_license": {
+    "provider": null,
+    "asset_id": null,
+    "page_url": null,
+    "author": null,
+    "license_spdx": null,
+    "license_url": null,
+    "attribution_required": null,
+    "hosting_policy": null
+  },
+  "geometry": {
+    "width_m": 1.8875,
+    "depth_m": 1.42,
+    "height_m": 0.8175,
+    "vertex_count": 238293,
+    "triangle_count": 295576,
+    "material_count": 1,
+    "texture_count": 2
+  },
+  "coordinate_system": {
+    "unit": "m",
+    "up_axis": "+Y",
+    "forward_axis": "+X",
+    "origin_rule": "center"
+  },
+  "appearance": {
+    "colors": [
+      {
+        "hex": "#7A6C5C",
+        "role": "primary",
+        "coverage_ratio": null
+      }
+    ],
+    "materials": [
+      {
+        "material_id": "fabric",
+        "coverage_ratio": null
+      }
+    ]
+  },
+  "feature_scores": {
+    "form.rectilinear": 0.4,
+    "form.curved": 0.55,
+    "form.symmetrical": 0.75,
+    "form.low_profile": 0.7,
+    "form.visual_weight": 0.5,
+    "form.geometric_simplicity": 0.6,
+    "surface.ornamentation": 0.25,
+    "surface.roughness": 0.55,
+    "surface.handcrafted": null,
+    "surface.aged": null,
+    "surface.natural_imperfection": null,
+    "construction.modular": null,
+    "construction.flat_pack_likelihood": null,
+    "construction.exposed_metal": null
+  },
+  "construction": {
+    "assembly_type": "fixed",
+    "detachable": false,
+    "support_type": "floor_base"
+  },
+  "placement": {
+    "support_surface": "floor",
+    "against_wall": true,
+    "front_clearance_m": null,
+    "side_clearance_m": null
+  },
+  "style_assessment": {
+    "score_scale": "0_to_1",
+    "scores": {
+      "style.nordic": {
+        "score": 0.5,
+        "score_origin": "human_input"
+      },
+      "style.wabi_sabi": {
+        "score": 0.25,
+        "score_origin": "human_input"
+      },
+      "style.ikea_functional": {
+        "score": 0.5,
+        "score_origin": "human_input"
+      },
+      "style.chinese": {
+        "score": 0.08,
+        "score_origin": "human_input",
+        "variants": {
+          "variant.traditional_chinese": {
+            "score": null,
+            "score_origin": null
+          },
+          "variant.neo_chinese": {
+            "score": null,
+            "score_origin": null
+          }
+        }
+      },
+      "style.industrial": {
+        "score": 0.05,
+        "score_origin": "human_input"
+      },
+      "style.modern": {
+        "score": 0.6,
+        "score_origin": "human_input"
+      },
+      "style.american": {
+        "score": 0.15,
+        "score_origin": "human_input"
+      }
+    },
+    "assessment_notes": "评分依据优先级：造型 > 材质 > 颜色（颜色仅作辅助）。分数 >= 0.5 的风格即视为该家具适配的房间风格标签，一键布置时按此筛选。分数由脚本初步填写，需人工复核。"
+  },
+  "notes": "由脚本解析 GLB 并用顶点投影识别：品类为床。尺寸为文件原值，整体约 1m，相对真实床偏小，使用前请确认缩放；网格含较多内部散乱顶点，单一未命名材质 + 2 张 2K 贴图；特征与风格分为初步判断，待人工复核。 该模型长轴沿 X（床头朝 -X），与其余模型朝向不一致，已把正面轴记为 +X。"
+}

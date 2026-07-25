@@ -145,8 +145,10 @@ internal fun scanTexturesIn(directory: File): List<TextureSpec> {
         }
 }
 
-internal fun scanTextures(context: Context): List<TextureSpec> =
-    scanTexturesIn(modelsDirectory(context))
+internal fun scanTextures(context: Context): List<TextureSpec> {
+    seedBundledAssetsIfNeeded(context)
+    return scanTexturesIn(modelsDirectory(context))
+}
 
 /**
  * Loads and caches TextureResources for the room builder. Textures are shared across room

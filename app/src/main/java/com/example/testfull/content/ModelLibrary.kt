@@ -35,11 +35,39 @@ internal fun modelDisplayName(fileName: String): String {
 
 /**
  * The folder the app scans for placeable models. It lives in the app-specific external files
- * directory so no storage permission is required; users populate it with `adb push`.
+ * directory so no storage permission is required. Models are seeded from bundled assets on
+ * first launch (see [seedBundledAssetsIfNeeded]); users can still add/override via `adb push`.
  */
 internal fun modelsDirectory(context: Context): File {
     val base = context.getExternalFilesDir(null) ?: context.filesDir
     return File(base, "models")
+}
+
+/**
+ * Copies bundled model/texture assets from `assets/models/` into the writable models directory
+ * on first launch (or when individual files are missing). This ships the furniture library
+ * with the APK so the user doesn't need to `adb push` files to the device.
+ *
+ * Idempotent: only copies files that don't already exist on the filesystem, so user-pushed
+ * overrides via adb are preserved. Should be called off the main thread (disk I/O).
+ */
+internal fun seedBundledAssetsIfNeeded(context: Context) {
+    val destDir = modelsDirectory(context)
+    if (!destDir.exists()) destDir.mkdirs()
+
+    val assetNames = runCatching { context.assets.list("models") }.getOrNull() ?: return
+    if (assetNames.isEmpty()) return
+
+    for (name in assetNames) {
+        val destFile = File(destDir, name)
+        if (destFile.exists()) continue // don't overwrite user-pushed files
+
+        runCatching {
+            context.assets.open("models/$name").use { input ->
+                destFile.outputStream().use { output -> input.copyTo(output) }
+            }
+        }.onFailure { Log.w(TAG, "seed: failed to copy $name: ${it.message}") }
+    }
 }
 
 /** Lists the supported model files in [directory], sorted case-insensitively by file name. */
@@ -54,7 +82,10 @@ internal fun scanModelsIn(directory: File): List<LibraryModel> {
         .map { LibraryModel(file = it, displayName = modelDisplayName(it.name)) }
 }
 
-internal fun scanModels(context: Context): List<LibraryModel> = scanModelsIn(modelsDirectory(context))
+internal fun scanModels(context: Context): List<LibraryModel> {
+    seedBundledAssetsIfNeeded(context)
+    return scanModelsIn(modelsDirectory(context))
+}
 
 /** Cap for a sidecar detail file, so a huge JSON can't bloat the AI prompt. */
 private const val MAX_DETAIL_CHARS = 2000

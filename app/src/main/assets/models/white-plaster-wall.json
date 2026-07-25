@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "type": "surface_texture",
+  "identity": { "id": "white-plaster-wall", "name": "White plaster wall", "source": "PolyHaven CC0 (plastered_wall)" },
+  "classification": { "surfaces": ["wall", "ceiling"], "styles": ["modern", "nordic", "minimalist"] },
+  "maps": { "base_color": "white-plaster-wall.jpg", "normal": null },
+  "tiling": { "meters_per_tile": 1.0 },
+  "material": { "roughness": 0.9, "metallic": 0.0 },
+  "notes": null
+}

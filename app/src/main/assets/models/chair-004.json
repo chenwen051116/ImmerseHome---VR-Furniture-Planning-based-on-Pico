@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-24T17:20:01.903Z",
+  "identity": {
+    "id": "chair-004",
+    "name": "长凳",
+    "description": null,
+    "status": "draft"
+  },
+  "classification": {
+    "category": "stool",
+    "room_types": [
+      "dining_room",
+      "balcony"
+    ]
+  },
+  "asset": {
+    "format": "glb",
+    "glb_url": null,
+    "thumbnail_url": null,
+    "file_size_bytes": null,
+    "sha256": null
+  },
+  "source_and_license": {
+    "provider": null,
+    "asset_id": null,
+    "page_url": null,
+    "author": null,
+    "license_spdx": null,
+    "license_url": null,
+    "attribution_required": null,
+    "hosting_policy": null
+  },
+  "geometry": {
+    "width_m": 1.004,
+    "depth_m": 0.345,
+    "height_m": 0.401,
+    "vertex_count": null,
+    "triangle_count": null,
+    "material_count": null,
+    "texture_count": null
+  },
+  "coordinate_system": {
+    "unit": "m",
+    "up_axis": "+Y",
+    "forward_axis": "+Z",
+    "origin_rule": "bottom_center"
+  },
+  "appearance": {
+    "colors": [
+      {
+        "hex": "#78473A",
+        "role": "primary",
+        "coverage_ratio": 0.4
+      },
+      {
+        "hex": "#080807",
+        "role": "secondary",
+        "coverage_ratio": 0.2
+      },
+      {
+        "hex": "#FCFBF7",
+        "role": "secondary",
+        "coverage_ratio": 0.4
+      }
+    ],
+    "materials": [
+      {
+        "material_id": "leather",
+        "coverage_ratio": 0.8
+      },
+      {
+        "material_id": "engineered_wood",
+        "coverage_ratio": 0.2
+      }
+    ]
+  },
+  "feature_scores": {
+    "form.rectilinear": 0.43,
+    "form.curved": 0.61,
+    "form.symmetrical": null,
+    "form.low_profile": 0.43,
+    "form.visual_weight": null,
+    "form.geometric_simplicity": null,
+    "surface.ornamentation": null,
+    "surface.roughness": null,
+    "surface.handcrafted": null,
+    "surface.aged": null,
+    "surface.natural_imperfection": null,
+    "construction.modular": null,
+    "construction.flat_pack_likelihood": null,
+    "construction.exposed_metal": null
+  },
+  "construction": {
+    "assembly_type": "fixed",
+    "detachable": false,
+    "support_type": "floor_base"
+  },
+  "placement": {
+    "support_surface": "floor",
+    "against_wall": false,
+    "front_clearance_m": null,
+    "side_clearance_m": null
+  },
+  "style_assessment": {
+    "score_scale": "0_to_1",
+    "scores": {
+      "style.nordic": {
+        "score": null,
+        "score_origin": null
+      },
+      "style.wabi_sabi": {
+        "score": 0.57,
+        "score_origin": "human_input"
+      },
+      "style.ikea_functional": {
+        "score": 0.63,
+        "score_origin": "human_input"
+      },
+      "style.chinese": {
+        "score": null,
+        "score_origin": null,
+        "variants": {
+          "variant.traditional_chinese": {
+            "score": null,
+            "score_origin": null
+          },
+          "variant.neo_chinese": {
+            "score": null,
+            "score_origin": null
+          }
+        }
+      },
+      "style.industrial": {
+        "score": null,
+        "score_origin": null
+      }
+    },
+    "assessment_notes": null
+  },
+  "notes": null
+}

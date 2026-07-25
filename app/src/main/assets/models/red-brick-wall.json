@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "type": "surface_texture",
+  "identity": { "id": "red-brick-wall", "name": "Red brick wall", "source": "PolyHaven CC0 (brick_wall_001)" },
+  "classification": { "surfaces": ["wall"], "styles": ["industrial", "loft", "rustic"] },
+  "maps": { "base_color": "red-brick-wall.jpg", "normal": "red-brick-wall_n.jpg" },
+  "tiling": { "meters_per_tile": 1.0 },
+  "material": { "roughness": 0.95, "metallic": 0.0 },
+  "notes": null
+}

@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-24T17:09:48.261Z",
+  "identity": {
+    "id": "sofa-003",
+    "name": "北欧风沙发",
+    "description": "这款现代直排布艺沙发采用方正柔和的全包式软包体量，搭配低矮实木底托，造型极简干净，依靠饱满布艺填充营造松弛柔和的坐感，是简约居家风格的百搭休闲家具。",
+    "status": "draft"
+  },
+  "classification": {
+    "category": "sofa",
+    "room_types": [
+      "living_room"
+    ]
+  },
+  "asset": {
+    "format": "glb",
+    "glb_url": null,
+    "thumbnail_url": null,
+    "file_size_bytes": 5449,
+    "sha256": null
+  },
+  "source_and_license": {
+    "provider": null,
+    "asset_id": null,
+    "page_url": null,
+    "author": null,
+    "license_spdx": null,
+    "license_url": null,
+    "attribution_required": null,
+    "hosting_policy": null
+  },
+  "geometry": {
+    "width_m": 2.4,
+    "depth_m": 0.95,
+    "height_m": 0.75,
+    "vertex_count": null,
+    "triangle_count": null,
+    "material_count": null,
+    "texture_count": null
+  },
+  "coordinate_system": {
+    "unit": "m",
+    "up_axis": "+Y",
+    "forward_axis": "+Z",
+    "origin_rule": "bottom_center"
+  },
+  "appearance": {
+    "colors": [
+      {
+        "hex": "#6D6A5F",
+        "role": "primary",
+        "coverage_ratio": 0.8
+      },
+      {
+        "hex": "#717E4E",
+        "role": "secondary",
+        "coverage_ratio": 0.2
+      }
+    ],
+    "materials": [
+      {
+        "material_id": "fabric",
+        "coverage_ratio": 0.9
+      },
+      {
+        "material_id": "natural_wood",
+        "coverage_ratio": 0.1
+      }
+    ]
+  },
+  "feature_scores": {
+    "form.rectilinear": 0.63,
+    "form.curved": 0.4,
+    "form.symmetrical": 0.95,
+    "form.low_profile": 0.75,
+    "form.visual_weight": 0.84,
+    "form.geometric_simplicity": 0.86,
+    "surface.ornamentation": 0,
+    "surface.roughness": 0.4,
+    "surface.handcrafted": 0.56,
+    "surface.aged": 0,
+    "surface.natural_imperfection": 0.25,
+    "construction.modular": 0.38,
+    "construction.flat_pack_likelihood": 0.2,
+    "construction.exposed_metal": 0
+  },
+  "construction": {
+    "assembly_type": "fixed",
+    "detachable": false,
+    "support_type": "floor_base"
+  },
+  "placement": {
+    "support_surface": "floor",
+    "against_wall": false,
+    "front_clearance_m": 0.7,
+    "side_clearance_m": 0.25
+  },
+  "style_assessment": {
+    "score_scale": "0_to_1",
+    "scores": {
+      "style.nordic": {
+        "score": 0.77,
+        "score_origin": "human_input"
+      },
+      "style.wabi_sabi": {
+        "score": null,
+        "score_origin": null
+      },
+      "style.ikea_functional": {
+        "score": null,
+        "score_origin": null
+      },
+      "style.chinese": {
+        "score": null,
+        "score_origin": null,
+        "variants": {
+          "variant.traditional_chinese": {
+            "score": null,
+            "score_origin": null
+          },
+          "variant.neo_chinese": {
+            "score": null,
+            "score_origin": null
+          }
+        }
+      },
+      "style.industrial": {
+        "score": null,
+        "score_origin": null
+      }
+    },
+    "assessment_notes": null
+  },
+  "notes": null
+}
