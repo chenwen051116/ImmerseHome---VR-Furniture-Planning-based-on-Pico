@@ -622,7 +622,8 @@ private suspend fun postChatCompletion(system: String, user: String): String =
         val payload =
             JSONObject()
                 .put("model", BuildConfig.AI_API_MODEL)
-                .put("temperature", 0.4)
+                // No "temperature": some upstreams (e.g. gpt-5 reasoning) 400 on any
+                // non-default value, and JSON mode carries the determinism we need.
                 .put("response_format", JSONObject().put("type", "json_object"))
                 .put(
                     "messages",
