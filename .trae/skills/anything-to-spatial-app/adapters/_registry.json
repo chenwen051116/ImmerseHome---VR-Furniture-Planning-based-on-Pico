@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "owner": "anything-to-spatial-app",
+  "invariants": {
+    "single_match_per_input_mode": true,
+    "adapter_output_schema": [
+      "evidence_packet.json",
+      "normalized_spatial_spec.json",
+      "assumption_ledger.json"
+    ],
+    "no_new_top_level_schema_fields": true
+  },
+  "adapters": [
+    {
+      "input_mode": "intent_only",
+      "adapter": "intent-adapter",
+      "path": "adapters/intent-adapter.md",
+      "status": "active",
+      "priority": "P1"
+    },
+    {
+      "input_mode": "visual_design",
+      "adapter": "figma-adapter",
+      "path": "adapters/figma-adapter.md",
+      "status": "active",
+      "priority": "P0",
+      "primary_source": "figma_url",
+      "hooks": {
+        "verify": {
+          "tool": "mcp__codin-d2c-figma-to-code__d2c_verify_code",
+          "runs_after": "design-style admission",
+          "runs_before": "mcp__codin-d2c-figma-to-code__d2c_cleanup_temp",
+          "required": true,
+          "call_count": "exactly_once",
+          "args_from": ["input_sources[].url", "generated_code_files", "platform", "code_context"]
+        },
+        "cleanup": {
+          "tool": "mcp__codin-d2c-figma-to-code__d2c_cleanup_temp",
+          "runs_after": "mcp__codin-d2c-figma-to-code__d2c_verify_code",
+          "required": true,
+          "args_from": ["input_sources[].url", "target_code_dir"]
+        }
+      }
+    },
+    {
+      "input_mode": "visual_reference",
+      "adapter": "screenshot-adapter",
+      "path": "adapters/screenshot-adapter.md",
+      "status": "active",
+      "priority": "P1"
+    },
+    {
+      "input_mode": "product_doc",
+      "adapter": "prd-adapter",
+      "path": "adapters/prd-adapter.md",
+      "status": "active",
+      "priority": "P2"
+    },
+    {
+      "input_mode": "hybrid",
+      "adapter": "hybrid-adapter",
+      "path": "adapters/hybrid-adapter.md",
+      "status": "active",
+      "priority": "P2",
+      "hooks": {
+        "condition": "input_sources[].type contains figma_url",
+        "verify": {
+          "tool": "mcp__codin-d2c-figma-to-code__d2c_verify_code",
+          "runs_after": "design-style admission",
+          "runs_before": "mcp__codin-d2c-figma-to-code__d2c_cleanup_temp",
+          "required": "when_condition_matches",
+          "call_count": "exactly_once",
+          "args_from": ["input_sources[].url", "generated_code_files", "platform", "code_context"]
+        },
+        "cleanup": {
+          "tool": "mcp__codin-d2c-figma-to-code__d2c_cleanup_temp",
+          "runs_after": "mcp__codin-d2c-figma-to-code__d2c_verify_code",
+          "required": "when_condition_matches",
+          "args_from": ["input_sources[].url", "target_code_dir"]
+        }
+      }
+    },
+    {
+      "input_mode": "incremental_patch",
+      "adapter": "incremental-patch-adapter",
+      "path": "adapters/incremental-patch-adapter.md",
+      "status": "active",
+      "priority": "P2",
+      "phase_rule": "runs after Phase 2 workspace inspection and skips Phase 4"
+    }
+  ]
+}
