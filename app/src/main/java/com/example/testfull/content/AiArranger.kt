@@ -176,6 +176,7 @@ internal fun buildArrangementMessages(
     catalog: List<CatalogModel>,
     currentPlacements: List<PlacedSummary>,
     textureCatalog: List<TextureSpec> = emptyList(),
+    zoneNotes: String? = null,
 ): Pair<String, String> {
     val system =
         buildString {
@@ -304,6 +305,9 @@ internal fun buildArrangementMessages(
         user.append("}")
     }
     user.append("]}\n")
+    if (!zoneNotes.isNullOrBlank()) {
+        user.append("ZONES: ").append(zoneNotes.trim()).append("\n")
+    }
     user.append(
         "ROOM rules: every item fully inside the walls; never covering a door or window; " +
             "items in \"furniture\" are already there — include one in your layout to keep or " +
@@ -585,6 +589,7 @@ internal suspend fun requestAiLayout(
     catalog: List<CatalogModel>,
     currentPlacements: List<PlacedSummary>,
     textureCatalog: List<TextureSpec> = emptyList(),
+    zoneNotes: String? = null,
 ): AiLayout {
     val (system, user) =
         buildArrangementMessages(
@@ -594,6 +599,7 @@ internal suspend fun requestAiLayout(
             catalog,
             currentPlacements,
             textureCatalog,
+            zoneNotes,
         )
     Log.w(TAG, "request: system=${system.length} chars, user=${user.length} chars")
     Log.w(TAG, "request user message: ${user.take(1200)}")

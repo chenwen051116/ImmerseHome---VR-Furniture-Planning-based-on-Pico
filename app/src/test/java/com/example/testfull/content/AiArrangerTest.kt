@@ -319,6 +319,7 @@ class AiArrangerTest {
                             details = null,
                         )
                     ),
+                zoneNotes = "West half is the living room, east half is the bedroom.",
             )
 
         // The preprompt teaches vocabulary, semantics, style rules and the details schema.
@@ -351,6 +352,8 @@ class AiArrangerTest {
         // The texture catalog is offered with its supported surfaces and styles.
         assertTrue(user.contains("TEXTURES"))
         assertTrue(user.contains("red-brick-wall — for surfaces: wall; styles: industrial"))
+        // Zone notes flow into the prompt so "living room"/"bedroom" requests land correctly.
+        assertTrue(user.contains("ZONES: West half is the living room, east half is the bedroom."))
         assertNotNull(user)
     }
 }

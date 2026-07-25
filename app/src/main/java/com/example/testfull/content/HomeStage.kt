@@ -259,6 +259,7 @@ fun HomeStage() {
                         catalog = modelCatalog,
                         currentPlacements = placementController.placedSummaries(),
                         textureCatalog = availableTextures,
+                        zoneNotes = appliedPlan.zoneNotes,
                     )
                 val resolved =
                     resolveAiPlacements(

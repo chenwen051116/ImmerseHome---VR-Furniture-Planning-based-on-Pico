@@ -40,6 +40,12 @@ internal data class FloorPlan(
     val walls: List<PlanWall> = emptyList(),
     val openings: List<PlanOpening> = emptyList(),
     val scale: Float = 1f,
+    /**
+     * Optional human/AI-readable description of the plan's zones (e.g. "west half is the
+     * living room, east half is the bedroom"). Included in the AI prompt when present;
+     * does not affect geometry.
+     */
+    val zoneNotes: String? = null,
 )
 
 internal data class PlanBounds(
@@ -104,6 +110,12 @@ internal fun demoFloorPlan(): FloorPlan =
                 // Bedroom north window (x = 3.5); the bed wall itself stays solid.
                 PlanOpening(4, 1, OpeningType.WINDOW, 0.792f, 1.6f, 1.2f, 0.9f),
             ),
+        zoneNotes =
+            "The plan has two zones joined by a 2.4 m open passage in the divider at x = 1: " +
+                "the WEST half (x < 1) is the LIVING ROOM (with the main entrance and the " +
+                "big south picture window), and the EAST half (x >= 1) is the BEDROOM. " +
+                "Place living-room furniture (sofa, coffee table, TV side) in the west zone " +
+                "and bedroom furniture (bed, nightstand, wardrobe) in the east zone.",
     )
 
 internal fun PlanPoint.distanceTo(other: PlanPoint): Float =
