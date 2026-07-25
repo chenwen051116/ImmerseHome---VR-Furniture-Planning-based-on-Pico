@@ -1,6 +1,17 @@
 package com.example.testfull.content
 
 import android.util.Log
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -10,7 +21,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.testfull.BuildConfig
 import com.pico.spatial.core.ecs.Entity
 import com.pico.spatial.core.ecs.TransformComponent
@@ -20,6 +37,7 @@ import com.pico.spatial.core.math.Quat
 import com.pico.spatial.core.math.Vector3
 import com.pico.spatial.tracking.controller.ControllerTrackingProvider
 import com.pico.spatial.tracking.hmd.HMDTrackingProvider
+import com.pico.spatial.ui.design.Text
 import com.pico.spatial.ui.foundation.content.SpatialView
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -194,15 +212,19 @@ private suspend fun resolveRoomTextures(
     )
 }
 
+private enum class MainPanel { RoomPlan, FurnitureLibrary, AiArrange }
+
 @Composable
 fun HomeStage() {
     var selectedEnvironment by remember { mutableStateOf(AppEnvironment.ROOM) }
     var showcaseScene by remember { mutableStateOf<Entity?>(null) }
     var roomAvailable by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Building room…") }
-    var editorExpanded by remember { mutableStateOf(true) }
+    var editorExpanded by remember { mutableStateOf(false) }
     // The launcher icon folds every main panel away (or opens them all) with one tap.
     var uiOpen by remember { mutableStateOf(true) }
+    // Single active panel in the main switcher (room plan / furniture / AI arrange).
+    var activePanel by remember { mutableStateOf(MainPanel.RoomPlan) }
     var draftPlan by remember { mutableStateOf(demoFloorPlan()) }
     var appliedPlan by remember { mutableStateOf(draftPlan) }
     var applyRevision by remember { mutableIntStateOf(0) }
@@ -226,6 +248,7 @@ fun HomeStage() {
     var selectedModelName by remember { mutableStateOf<String?>(null) }
     var placementActive by remember { mutableStateOf(false) }
     var modelScale by remember { mutableStateOf(1f) }
+    var modelRotation by remember { mutableStateOf(0f) }
     var placedCount by remember { mutableIntStateOf(0) }
     var aimStatus by remember { mutableStateOf("Aim: idle") }
 
@@ -530,7 +553,9 @@ fun HomeStage() {
                                         )
                                     ) {
                                         selectedModelName = model.displayName
+                                        modelRotation = 0f
                                         placementActive = true
+                                        uiOpen = false
                                         Log.w(TAG, "debug hook: placing ${model.displayName}")
                                     }
                                 }
@@ -609,27 +634,15 @@ fun HomeStage() {
                     else -> "The room could not be generated."
                 }
 
-            listOf("room-plan", "furniture-library", "ai-arrange", "placement-hud", "ui-launcher").forEach {
+            listOf("main-panel", "placement-hud", "ui-launcher").forEach {
                 Log.w(TAG, "attachment entity($it) = ${attachments.entity(id = it) != null}")
             }
-            attachments.entity(id = "room-plan")?.apply {
+            // Single main panel hosts the switcher (room plan / furniture / AI arrange).
+            // Closer to the user since only one panel shows at a time.
+            attachments.entity(id = "main-panel")?.apply {
                 components[TransformComponent::class.java]?.setPosition(
-                    Vector3(0f, 1.4f, -1.3f)
+                    Vector3(0f, 1.3f, -1.0f)
                 )
-                content.addEntity(this)
-            }
-            attachments.entity(id = "furniture-library")?.apply {
-                components[TransformComponent::class.java]?.apply {
-                    setPosition(Vector3(-0.62f, 1.3f, -1.05f))
-                    setEulerAngles(EulerAngles(yaw = 30f))
-                }
-                content.addEntity(this)
-            }
-            attachments.entity(id = "ai-arrange")?.apply {
-                components[TransformComponent::class.java]?.apply {
-                    setPosition(Vector3(0.62f, 1.3f, -1.05f))
-                    setEulerAngles(EulerAngles(yaw = -30f))
-                }
                 content.addEntity(this)
             }
             attachments.entity(id = "ui-launcher")?.apply {
@@ -649,19 +662,17 @@ fun HomeStage() {
             }
         },
         update = { content, attachments ->
-            // The launcher folds/opens every main panel at once. The placement HUD keeps its
-            // own visibility rules (it only exists while placing) and the launcher itself
-            // stays visible so the interface can always be reopened.
-            listOf("room-plan", "furniture-library", "ai-arrange").forEach { panelId ->
-                attachments.entity(id = panelId)?.let { panel ->
-                    if (panel.enabled != uiOpen) panel.enabled = uiOpen
-                }
+            // The launcher folds/opens the main panel (which hosts the switcher). The placement
+            // HUD keeps its own visibility rules (it only exists while placing) and the launcher
+            // itself stays visible so the interface can always be reopened.
+            attachments.entity(id = "main-panel")?.let { panel ->
+                if (panel.enabled != uiOpen) panel.enabled = uiOpen
             }
 
             // --- View-following UI rig ---
-            // All panels keep their formation relative to the user's gaze: room plan straight
-            // ahead, library/AI at ±30°, launcher below. Yaw only — following pitch would be
-            // nauseating. When the interface is folded, only the launcher follows.
+            // The single main panel (hosting the switcher) stays centered on the user's gaze.
+            // Yaw only — following pitch would be nauseating. When the interface is folded,
+            // only the launcher follows.
             // Reading rigTick subscribes this block to the 100 ms ticker — without it the
             // rig would only re-evaluate when some unrelated state changes (e.g. a click).
             val rigTickObserved = rigTick
@@ -751,10 +762,10 @@ fun HomeStage() {
                             }
                         }
 
+                        // Single main panel centered and closer (only one shows at a time),
+                        // so the UI is easier to read. Launcher stays below.
                         if (uiOpen) {
-                            placePanel("room-plan", 1.3f, 0f, -0.2f)
-                            placePanel("furniture-library", 1.05f, 0.62f, -0.3f)
-                            placePanel("ai-arrange", 1.05f, -0.62f, -0.3f)
+                            placePanel("main-panel", 1.0f, 0f, -0.2f)
                         }
                         placePanel("ui-launcher", 1.05f, 0f, -0.78f)
                     }
@@ -916,94 +927,141 @@ fun HomeStage() {
                     },
                 )
             }
-            AttachmentPanel(id = "room-plan") {
-                FloorPlanExperiencePanel(
-                    plan = draftPlan,
-                    appliedPlan = appliedPlan,
-                    selectedEnvironment = selectedEnvironment,
-                    showcaseAvailable = showcaseScene != null,
-                    roomAvailable = roomAvailable,
-                    expanded = editorExpanded,
-                    status = status,
-                    roomPositionX = roomNavigationPosition.x,
-                    roomPositionZ = roomNavigationPosition.z,
-                    onPlanChange = { draftPlan = it },
-                    onApplyPlan = {
-                        roomNavigationPosition = RoomNavigationPosition()
-                        appliedPlan = draftPlan.normalized()
-                        applyRevision += 1
-                    },
-                    onEnvironmentSelected = { selectedEnvironment = it },
-                    onMoveInRoom = { deltaX, deltaZ ->
-                        roomNavigationPosition =
-                            RoomNavigationPosition(
-                                x =
-                                    (roomNavigationPosition.x + deltaX)
-                                        .coerceIn(
-                                            -ROOM_NAVIGATION_LIMIT_METERS,
-                                            ROOM_NAVIGATION_LIMIT_METERS,
-                                        ),
-                                z =
-                                    (roomNavigationPosition.z + deltaZ)
-                                        .coerceIn(
-                                            -ROOM_NAVIGATION_LIMIT_METERS,
-                                            ROOM_NAVIGATION_LIMIT_METERS,
-                                        ),
-                            )
-                        selectedEnvironment = AppEnvironment.ROOM
-                    },
-                    onResetRoomPosition = {
-                        roomNavigationPosition = RoomNavigationPosition()
-                        selectedEnvironment = AppEnvironment.ROOM
-                    },
-                    onExpandedChange = { editorExpanded = it },
-                )
-            }
-            AttachmentPanel(id = "furniture-library") {
-                FurnitureLibraryPanel(
-                    availableModels = availableModels,
-                    selectedModelName = selectedModelName,
-                    modelScale = modelScale,
-                    placedCount = placedCount,
-                    roomAvailable = roomAvailable,
-                    onScanModels = {
-                        availableModels = scanModels(context)
-                        availableTextures = scanTextures(context)
-                        scope.launch {
-                            modelCatalog = buildCatalog(availableModels)
-                            aiStatus =
-                                "Models: ${availableModels.size} found, " +
-                                    "${modelCatalog.size} AI-ready."
-                        }
-                    },
-                    onModelSelected = { model ->
-                        scope.launch {
-                            if (placementController.selectModel(model.file, model.displayName)) {
-                                selectedModelName = model.displayName
-                                // Start the slider at the model's intended real-world scale
-                                // (sidecar geometry vs measured bounds); 1 when unknown.
-                                val defaultScale =
-                                    modelCatalog
-                                        .firstOrNull { it.displayName == model.displayName }
-                                        ?.defaultScale ?: 1f
-                                modelScale = defaultScale
-                                placementController.scale = defaultScale
-                                placementActive = true
-                            } else {
-                                selectedModelName = null
-                                status = "Could not load model ${model.displayName}."
-                            }
-                        }
-                    },
-                    onModelScaleChange = { newScale ->
-                        modelScale = newScale
-                        placementController.scale = newScale
-                    },
-                    onClearPlaced = {
-                        placementController.clearPlaced()
-                        placedCount = 0
-                    },
-                )
+            AttachmentPanel(id = "main-panel") {
+                MainPanelSwitcher(
+                    activePanel = activePanel,
+                    onPanelChange = { activePanel = it },
+                ) { panel ->
+                    when (panel) {
+                        MainPanel.RoomPlan -> FloorPlanExperiencePanel(
+                            plan = draftPlan,
+                            appliedPlan = appliedPlan,
+                            selectedEnvironment = selectedEnvironment,
+                            showcaseAvailable = showcaseScene != null,
+                            roomAvailable = roomAvailable,
+                            expanded = editorExpanded,
+                            status = status,
+                            roomPositionX = roomNavigationPosition.x,
+                            roomPositionZ = roomNavigationPosition.z,
+                            onPlanChange = { draftPlan = it },
+                            onApplyPlan = {
+                                roomNavigationPosition = RoomNavigationPosition()
+                                appliedPlan = draftPlan.normalized()
+                                applyRevision += 1
+                            },
+                            onEnvironmentSelected = { selectedEnvironment = it },
+                            onMoveInRoom = { deltaX, deltaZ ->
+                                roomNavigationPosition =
+                                    RoomNavigationPosition(
+                                        x =
+                                            (roomNavigationPosition.x + deltaX)
+                                                .coerceIn(
+                                                    -ROOM_NAVIGATION_LIMIT_METERS,
+                                                    ROOM_NAVIGATION_LIMIT_METERS,
+                                                ),
+                                        z =
+                                            (roomNavigationPosition.z + deltaZ)
+                                                .coerceIn(
+                                                    -ROOM_NAVIGATION_LIMIT_METERS,
+                                                    ROOM_NAVIGATION_LIMIT_METERS,
+                                                ),
+                                    )
+                                selectedEnvironment = AppEnvironment.ROOM
+                            },
+                            onResetRoomPosition = {
+                                roomNavigationPosition = RoomNavigationPosition()
+                                selectedEnvironment = AppEnvironment.ROOM
+                            },
+                            onExpandedChange = { editorExpanded = it },
+                        )
+                        MainPanel.FurnitureLibrary -> FurnitureLibraryPanel(
+                            availableModels = availableModels,
+                            selectedModelName = selectedModelName,
+                            modelScale = modelScale,
+                            placedCount = placedCount,
+                            roomAvailable = roomAvailable,
+                            onScanModels = {
+                                availableModels = scanModels(context)
+                                availableTextures = scanTextures(context)
+                                scope.launch {
+                                    modelCatalog = buildCatalog(availableModels)
+                                    aiStatus =
+                                        "Models: ${availableModels.size} found, " +
+                                            "${modelCatalog.size} AI-ready."
+                                }
+                            },
+                            onModelSelected = { model ->
+                                scope.launch {
+                                    if (!roomAvailable) {
+                                        status = "Generate a room first before placing furniture."
+                                        return@launch
+                                    }
+                                    try {
+                                        if (placementController.selectModel(model.file, model.displayName)) {
+                                            selectedModelName = model.displayName
+                                            // Start the slider at the model's intended real-world scale
+                                            // (sidecar geometry vs measured bounds); 1 when unknown.
+                                            val defaultScale =
+                                                modelCatalog
+                                                    .firstOrNull { it.displayName == model.displayName }
+                                                    ?.defaultScale ?: 1f
+                                            modelScale = defaultScale
+                                            placementController.scale = defaultScale
+                                            modelRotation = 0f
+                                            placementActive = true
+                                            // Auto-hide the main panel so the placement HUD is unobstructed.
+                                            uiOpen = false
+                                        } else {
+                                            selectedModelName = null
+                                            status = "Could not load model ${model.displayName}."
+                                        }
+                                    } catch (e: Exception) {
+                                        selectedModelName = null
+                                        status = "Error loading model: ${e.message}"
+                                    }
+                                }
+                            },
+                            onModelScaleChange = { newScale ->
+                                modelScale = newScale
+                                placementController.scale = newScale
+                            },
+                            onClearPlaced = {
+                                placementController.clearPlaced()
+                                placedCount = 0
+                            },
+                        )
+                        MainPanel.AiArrange -> AiArrangePanel(
+                            aiPrompt = aiPrompt,
+                            aiBusy = aiBusy,
+                            aiStatus = aiStatus,
+                            roomAvailable = roomAvailable,
+                            onAiPromptChange = { aiPrompt = it },
+                            onArrangeWithAi = runAiArrange,
+                            availableTextures = availableTextures,
+                            selectedTextures = selectedTextures,
+                            onTextureSlotChange = { slot, name ->
+                                selectedTextures =
+                                    if (name == null) {
+                                        selectedTextures - slot
+                                    } else {
+                                        selectedTextures + (slot to name)
+                                    }
+                            },
+                            onApplyTextures = {
+                                scope.launch {
+                                    aiStatus = "Applying textures…"
+                                    roomTextures =
+                                        resolveRoomTextures(
+                                            selectedTextures,
+                                            availableTextures,
+                                            textureCache,
+                                        )
+                                    applyRevision += 1
+                                }
+                            },
+                        )
+                    }
+                }
             }
             AttachmentPanel(id = "placement-hud") {
                 PlacementHudPanel(
@@ -1012,9 +1070,14 @@ fun HomeStage() {
                     placedCount = placedCount,
                     aimStatus = aimStatus,
                     roomAvailable = roomAvailable,
+                    rotationDegrees = modelRotation,
                     onPlacementActiveChange = { active ->
                         placementActive = active
-                        if (!active) placementController.hideGhost()
+                        if (!active) {
+                            placementController.hideGhost()
+                            // Reopen the main panel when the user stops placing.
+                            uiOpen = true
+                        }
                     },
                     onDropNow = {
                         scope.launch {
@@ -1027,36 +1090,13 @@ fun HomeStage() {
                         placementController.clearPlaced()
                         placedCount = 0
                     },
-                )
-            }
-            AttachmentPanel(id = "ai-arrange") {
-                AiArrangePanel(
-                    aiPrompt = aiPrompt,
-                    aiBusy = aiBusy,
-                    aiStatus = aiStatus,
-                    roomAvailable = roomAvailable,
-                    onAiPromptChange = { aiPrompt = it },
-                    onArrangeWithAi = runAiArrange,
-                    availableTextures = availableTextures,
-                    selectedTextures = selectedTextures,
-                    onTextureSlotChange = { slot, name ->
-                        selectedTextures =
-                            if (name == null) {
-                                selectedTextures - slot
-                            } else {
-                                selectedTextures + (slot to name)
-                            }
+                    onRotationChange = { degrees ->
+                        modelRotation = degrees
+                        placementController.setManualYaw(degrees)
                     },
-                    onApplyTextures = {
-                        scope.launch {
-                            aiStatus = "Applying textures…"
-                            roomTextures =
-                                resolveRoomTextures(
-                                    selectedTextures,
-                                    availableTextures,
-                                    textureCache,
-                                )
-                            applyRevision += 1
+                    onUndo = {
+                        if (placementController.undoLast()) {
+                            placedCount = placementController.placedCount
                         }
                     },
                 )
@@ -1067,3 +1107,90 @@ fun HomeStage() {
 
 private fun roomStatus(plan: FloorPlan): String =
     "Room ready: ${plan.walls.size} walls, ${plan.openings.size} openings."
+
+/**
+ * Hosts one main panel at a time with semi-transparent arrow buttons on both sides and a
+ * sliding transition between panels. Cycles RoomPlan -> FurnitureLibrary -> AiArrange.
+ */
+@Composable
+private fun MainPanelSwitcher(
+    activePanel: MainPanel,
+    onPanelChange: (MainPanel) -> Unit,
+    content: @Composable (MainPanel) -> Unit,
+) {
+    // Row places arrows beside the panel (not overlapping it), so the panel's glass
+    // material surface can't cover the arrows. The AnimatedContent slides between
+    // the two arrows which stay fixed during the transition.
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        PanelArrow(
+            direction = -1,
+            onClick = {
+                onPanelChange(
+                    when (activePanel) {
+                        MainPanel.RoomPlan -> MainPanel.AiArrange
+                        MainPanel.FurnitureLibrary -> MainPanel.RoomPlan
+                        MainPanel.AiArrange -> MainPanel.FurnitureLibrary
+                    },
+                )
+            },
+        )
+
+        Box(contentAlignment = Alignment.Center) {
+            AnimatedContent(
+                targetState = activePanel,
+                transitionSpec = {
+                    if (targetState.ordinal > initialState.ordinal) {
+                        slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(300)) togetherWith
+                            slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(300))
+                    } else {
+                        slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(300)) togetherWith
+                            slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(300))
+                    }
+                },
+                contentKey = { it },
+            ) { panel ->
+                content(panel)
+            }
+        }
+
+        PanelArrow(
+            direction = 1,
+            onClick = {
+                onPanelChange(
+                    when (activePanel) {
+                        MainPanel.RoomPlan -> MainPanel.FurnitureLibrary
+                        MainPanel.FurnitureLibrary -> MainPanel.AiArrange
+                        MainPanel.AiArrange -> MainPanel.RoomPlan
+                    },
+                )
+            },
+        )
+    }
+}
+
+/** Semi-transparent circular arrow button used to cycle the main panels. */
+@Composable
+private fun PanelArrow(
+    direction: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier =
+            modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(Color(0x44FFFFFF))
+                .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = if (direction < 0) "‹" else "›",
+            color = Color.White,
+            fontSize = 32.sp,
+        )
+    }
+}

@@ -84,8 +84,8 @@ private val FigPrimaryText = Color(0xFF3C2015) // dark brown labels on glass
 private val FigGlassText = Color(0xFFEEEEEE) // button text on glass
 private val FigGlassTextDim = Color(0x99EEEEEE) // disabled button text
 private val FigAccent = Color(0xFFFF9165) // orange selection/active accent
-private val FigGlassBg = Color(0x3DFFFFFF) // rgba(255,255,255,0.24) frosted button fill
-private val FigGlassBgActive = Color(0x66FFFFFF) // active/selected button fill
+private val FigGlassBg = Color(0x4DFFFFFF) // rgba(255,255,255,0.30) frosted button fill (Figma spec)
+private val FigGlassBgActive = Color(0xFFFFFEFE) // solid #FFFEFE active mode chip (Figma spec)
 private val FigLabelMuted = Color(0x993C2015) // muted dark-brown secondary text
 
 /**
@@ -103,7 +103,7 @@ private fun GlassButton(
     fontSize: androidx.compose.ui.unit.TextUnit = 16.sp,
 ) {
     val bg = if (!enabled) Color(0x1AFFFFFF) else if (selected) FigGlassBgActive else FigGlassBg
-    val textColor = if (!enabled) FigGlassTextDim else if (selected) Color.White else FigGlassText
+    val textColor = if (!enabled) FigGlassTextDim else if (selected) FigPrimaryText else FigGlassText
     Box(
         modifier =
             modifier

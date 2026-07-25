@@ -203,6 +203,13 @@ internal class PlacementController {
     /** Uniform scale applied to the ghost and to dropped objects. */
     var scale: Float = 1f
 
+    /**
+     * Manual yaw override in degrees. When non-null, the ghost uses this yaw instead of
+     * auto-facing the user. Set via [setManualYaw] from the placement HUD's rotation slider.
+     */
+    var manualYaw: Float? = null
+        private set
+
     var selectedModelName: String? = null
         private set
 
@@ -315,7 +322,13 @@ internal class PlacementController {
         releaseSelectionResources()
         modelFile = file
         selectedModelName = displayName
+        manualYaw = null
         return reloadSelection()
+    }
+
+    /** Sets a manual yaw override (null = auto-face the user). Applies to the ghost immediately. */
+    fun setManualYaw(degrees: Float?) {
+        manualYaw = degrees
     }
 
     /** (Re)builds the ghost and collision resources for the current selection, if any. */
@@ -465,7 +478,7 @@ internal class PlacementController {
             )
         var restLocal = navigationLocalPoint(restScene, navOffset)
         val yaw =
-            userPositionScene?.let { yawFacingUserDegrees(restScene, it) } ?: 0f
+            manualYaw ?: userPositionScene?.let { yawFacingUserDegrees(restScene, it) } ?: 0f
 
         // If the aimed spot overlaps placed furniture on the ground plane, slide the ghost to
         // the nearest free spot (its bounding box must not intersect any placed one). Only
@@ -739,6 +752,19 @@ internal class PlacementController {
         placedShapes.clear()
         placedMaterials.forEach { it.close() }
         placedMaterials.clear()
+    }
+
+    /** Removes the most recently placed object. Returns true if an object was removed. */
+    fun undoLast(): Boolean {
+        if (placedObjects.isEmpty()) return false
+        val lastIndex = placedObjects.lastIndex
+        placedObjects[lastIndex].entity.destroy(recursively = true)
+        placedObjects.removeAt(lastIndex)
+        placedShapes.getOrNull(lastIndex)?.close()
+        placedShapes.removeAt(lastIndex)
+        placedMaterials.getOrNull(lastIndex)?.close()
+        placedMaterials.removeAt(lastIndex)
+        return true
     }
 
     /** Releases the ghost, collision resources, placed objects, and the model selection. */
