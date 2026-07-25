@@ -73,20 +73,46 @@ internal data class WallSolid(
     val top: Float,
 )
 
+/**
+ * The starter plan: a normal 三室一厅 (three bedrooms + living room) apartment,
+ * 9.6 m × 7.6 m. North row: three bedrooms over a corridor; south half: kitchen
+ * (west) and living room (east). Main entrance is on the south wall.
+ */
 internal fun demoFloorPlan(): FloorPlan =
     FloorPlan(
         walls =
             listOf(
-                PlanWall(1, PlanPoint(-7.5f, -4f), PlanPoint(7.5f, -4f)),
-                PlanWall(2, PlanPoint(7.5f, -4f), PlanPoint(7.5f, 4f)),
-                PlanWall(3, PlanPoint(7.5f, 4f), PlanPoint(-7.5f, 4f)),
-                PlanWall(4, PlanPoint(-7.5f, 4f), PlanPoint(-7.5f, -4f)),
+                PlanWall(1, PlanPoint(-4.8f, -3.8f), PlanPoint(4.8f, -3.8f)),
+                PlanWall(2, PlanPoint(4.8f, -3.8f), PlanPoint(4.8f, 3.8f)),
+                PlanWall(3, PlanPoint(4.8f, 3.8f), PlanPoint(-4.8f, 3.8f)),
+                PlanWall(4, PlanPoint(-4.8f, 3.8f), PlanPoint(-4.8f, -3.8f)),
+                // Bedroom row / corridor divider.
+                PlanWall(5, PlanPoint(-4.8f, -0.6f), PlanPoint(4.8f, -0.6f)),
+                PlanWall(6, PlanPoint(-1.6f, -3.8f), PlanPoint(-1.6f, -0.6f)),
+                PlanWall(7, PlanPoint(1.6f, -3.8f), PlanPoint(1.6f, -0.6f)),
+                // Corridor → kitchen wall, and kitchen / living partition.
+                PlanWall(8, PlanPoint(-4.8f, 0.6f), PlanPoint(-0.8f, 0.6f)),
+                PlanWall(9, PlanPoint(-0.8f, 0.6f), PlanPoint(-0.8f, 3.8f)),
             ),
         openings =
             listOf(
-                PlanOpening(1, 1, OpeningType.DOOR, 0.5f, 0.9f, 2.1f, 0f),
-                PlanOpening(2, 2, OpeningType.WINDOW, 0.5f, 1.4f, 1.1f, 0.9f),
-                PlanOpening(3, 4, OpeningType.WINDOW, 0.5f, 1.4f, 1.1f, 0.9f),
+                // Main entrance (south wall, x = 1.0).
+                PlanOpening(1, 3, OpeningType.DOOR, 0.396f, 0.95f, 2.1f, 0f),
+                // Bedroom doors (from the corridor).
+                PlanOpening(2, 5, OpeningType.DOOR, 0.167f, 0.85f, 2.05f, 0f),
+                PlanOpening(3, 5, OpeningType.DOOR, 0.5f, 0.85f, 2.05f, 0f),
+                PlanOpening(4, 5, OpeningType.DOOR, 0.833f, 0.85f, 2.05f, 0f),
+                // Kitchen ↔ corridor, kitchen ↔ living.
+                PlanOpening(5, 8, OpeningType.DOOR, 0.5f, 0.85f, 2.05f, 0f),
+                PlanOpening(6, 9, OpeningType.DOOR, 0.5f, 0.85f, 2.05f, 0f),
+                // Bedroom windows (north wall).
+                PlanOpening(7, 1, OpeningType.WINDOW, 0.167f, 1.2f, 1.1f, 0.9f),
+                PlanOpening(8, 1, OpeningType.WINDOW, 0.5f, 1.2f, 1.1f, 0.9f),
+                PlanOpening(9, 1, OpeningType.WINDOW, 0.833f, 1.2f, 1.1f, 0.9f),
+                // Living-room picture window (south wall, x = 2.0) and kitchen window
+                // (west wall, z = 2.2).
+                PlanOpening(10, 3, OpeningType.WINDOW, 0.292f, 2.2f, 1.2f, 0.8f),
+                PlanOpening(11, 4, OpeningType.WINDOW, 0.21f, 1.2f, 1.1f, 0.9f),
             ),
     )
 

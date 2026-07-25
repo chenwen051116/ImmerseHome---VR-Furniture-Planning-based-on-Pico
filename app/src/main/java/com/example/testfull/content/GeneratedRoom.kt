@@ -15,6 +15,7 @@ import com.pico.spatial.core.ecs.resource.MeshResource
 import com.pico.spatial.core.ecs.resource.PhysicsMaterialResource
 import com.pico.spatial.core.ecs.resource.PhysicallyBasedMaterial
 import com.pico.spatial.core.ecs.resource.ShapeResource
+import com.pico.spatial.core.ecs.resource.TextureResource
 import com.pico.spatial.core.ecs.resource.UnlitMaterial
 import com.pico.spatial.core.math.Color4
 import com.pico.spatial.core.math.EulerAngles
@@ -46,7 +47,24 @@ internal class GeneratedRoom(
     }
 }
 
-internal fun generateRoom(planInput: FloorPlan): GeneratedRoom {
+/** A loaded texture set for one room surface, owned by the caller's TextureCache. */
+internal data class TexturedSurface(
+    val baseColor: TextureResource,
+    val normal: TextureResource?,
+    val roughness: Float,
+    val metallic: Float,
+)
+
+/** Optional per-surface textures for [generateRoom]; null keeps the default flat material. */
+internal data class RoomTextures(
+    val wall: TexturedSurface? = null,
+    val floor: TexturedSurface? = null,
+    val ceiling: TexturedSurface? = null,
+    val door: TexturedSurface? = null,
+    val window: TexturedSurface? = null,
+)
+
+internal fun generateRoom(planInput: FloorPlan, textures: RoomTextures = RoomTextures()): GeneratedRoom {
     val plan = planInput.normalized()
     val bounds = plan.bounds()
     val root = Entity()
@@ -62,11 +80,20 @@ internal fun generateRoom(planInput: FloorPlan): GeneratedRoom {
             dynamicFriction = 0.68f,
             restitution = 0.02f,
         )
-    val wallMaterial = material(Color4(0.76f, 0.79f, 0.82f, 1f), 0.82f)
-    val floorMaterial = material(Color4(0.34f, 0.38f, 0.42f, 1f), 0.9f)
-    val ceilingMaterial = material(Color4(0.9f, 0.91f, 0.92f, 1f), 0.92f)
-    val doorMaterial = material(Color4(0.43f, 0.24f, 0.12f, 1f), 0.68f)
-    val windowMaterial = glassMaterial()
+    val wallMaterial =
+        textures.wall?.let { texturedMaterial(it) }
+            ?: material(Color4(0.76f, 0.79f, 0.82f, 1f), 0.82f)
+    val floorMaterial =
+        textures.floor?.let { texturedMaterial(it) }
+            ?: material(Color4(0.34f, 0.38f, 0.42f, 1f), 0.9f)
+    val ceilingMaterial =
+        textures.ceiling?.let { texturedMaterial(it) }
+            ?: material(Color4(0.9f, 0.91f, 0.92f, 1f), 0.92f)
+    val doorMaterial =
+        textures.door?.let { texturedMaterial(it) }
+            ?: material(Color4(0.43f, 0.24f, 0.12f, 1f), 0.68f)
+    val windowMaterial =
+        textures.window?.let { texturedGlassMaterial(it) } ?: glassMaterial()
     val worldMaterial = worldShellMaterial()
     val materials =
         listOf(
@@ -225,6 +252,25 @@ private fun material(color: Color4, roughness: Float): PhysicallyBasedMaterial =
     PhysicallyBasedMaterial.create().apply {
         setBaseColor(color)
         setRoughness(roughness)
+    }
+
+private fun texturedMaterial(surface: TexturedSurface): PhysicallyBasedMaterial =
+    PhysicallyBasedMaterial.create().apply {
+        setBaseColorTexture(surface.baseColor)
+        surface.normal?.let { setNormalTexture(it) }
+        setRoughness(surface.roughness)
+        setMetallic(surface.metallic)
+    }
+
+/** Glass driven by an RGBA texture: the texture's alpha decides frame-vs-glass transparency. */
+private fun texturedGlassMaterial(surface: TexturedSurface): PhysicallyBasedMaterial =
+    PhysicallyBasedMaterial.create(BlendingMode.TRANSPARENT).apply {
+        setBaseColorTexture(surface.baseColor)
+        surface.normal?.let { setNormalTexture(it) }
+        setOpacity(1f)
+        setRoughness(surface.roughness)
+        setMetallic(surface.metallic)
+        setDepthWrite(false)
     }
 
 private fun glassMaterial(): PhysicallyBasedMaterial =

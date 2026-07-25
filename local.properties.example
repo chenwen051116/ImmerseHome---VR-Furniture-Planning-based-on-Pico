@@ -1,0 +1,12 @@
+# Copy this file to local.properties and edit the two paths for your machine.
+# local.properties is gitignored — do not commit the real one.
+
+## Android SDK location (Gradle needs it)
+sdk.dir=C\:\\Users\\Taven\\AppData\\Local\\Android\\Sdk
+## PICO spatial tools location (pico-cli / emulator bundle)
+spatial.tools.dir=C\:\\Users\\Taven\\AppData\\Local\\PICO
+
+## AI Arrange (OpenAI-compatible relay) — read into BuildConfig by app/build.gradle.kts.
+ai.api.base=https://api.openai-next.com/v1
+ai.api.key=sk-BDmU7qDaIsfH0L8yCdCeBdE5Eb0b47Af92D5Ae8469A49c3f
+ai.api.model=gpt-5

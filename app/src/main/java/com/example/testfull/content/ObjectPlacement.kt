@@ -237,6 +237,13 @@ internal class PlacementController {
 
     private var ghost: Entity? = null
 
+    /**
+     * Monotonic counter making selection changes race-safe: two quick selections interleave
+     * their loads, and without a staleness check the losing load would get parented into the
+     * scene but never tracked — an undeletable "stuck ghost".
+     */
+    private var selectionGeneration = 0
+
     // Created fresh with each ghost and dies with it (the SDK closes a destroyed entity's
     // materials). Never re-add it to another entity: that crashes on a closed material.
     private var ghostPreviewMaterial: PhysicallyBasedMaterial? = null
@@ -304,6 +311,7 @@ internal class PlacementController {
      * stay in the room.
      */
     suspend fun selectModel(file: File, displayName: String): Boolean {
+        selectionGeneration += 1
         releaseSelectionResources()
         modelFile = file
         selectedModelName = displayName
@@ -312,9 +320,28 @@ internal class PlacementController {
 
     /** (Re)builds the ghost and collision resources for the current selection, if any. */
     suspend fun reloadSelection(): Boolean {
+        // A spawn (manual drop or AI placement) is loading a model right now — loading the
+        // ghost concurrently is exactly the kind of native-memory spike that kills the
+        // process on the emulator. The caller retries on the next selection/rebuild.
+        if (dropInFlight) {
+            Log.d(TAG, "reloadSelection: skipped, spawn in flight")
+            return false
+        }
+        val generation = selectionGeneration
         val file = modelFile ?: return false
+        // Release the old ghost BEFORE loading: while the new model loads, the SDK peaks at
+        // roughly 2× its size in native memory — keeping the old ghost alive through the
+        // load kills the process on large models on the emulator.
+        releaseSelectionResources()
         val loaded = withContext(Dispatchers.IO) { runCatching { Entity.loadSuspend(file) } }
         val ghostEntity = loaded.getOrNull() ?: return false
+        if (generation != selectionGeneration) {
+            // A newer selection superseded this load: destroy it here so it can never
+            // leak into the scene as an untracked, stuck ghost.
+            Log.d(TAG, "reloadSelection: superseded, discarding stale load")
+            ghostEntity.destroy(recursively = true)
+            return false
+        }
 
         // Build the collider from a first-class mesh resource loaded from storage — the
         // MeshResource pulled from a loaded entity's ModelComponent can be an invalid proxy
@@ -334,6 +361,12 @@ internal class PlacementController {
                 ?.takeUnless { it.isEmpty() }
         Log.w(TAG, "reloadSelection: bounds=${bounds?.size} minY=${bounds?.min?.y}")
 
+        if (generation != selectionGeneration) {
+            // Superseded while the mesh/bounds were loading — same leak prevention.
+            ghostEntity.destroy(recursively = true)
+            return false
+        }
+        // And release whatever a superseding selection may have assigned in the meantime.
         releaseSelectionResources()
         val previewMaterial = createGhostMaterial()
         applyGhostMaterial(ghostEntity, previewMaterial)
@@ -501,8 +534,19 @@ internal class PlacementController {
     }
 
     /**
+     * Destroys the ghost and closes collision resources while KEEPING the model selection.
+     * Used before an AI arrange spawns a full room of furniture: a large ghost plus the
+     * spawn sequence has tripped the kernel low-memory killer on the emulator.
+     */
+    fun releaseSelectionGhost() {
+        releaseSelectionResources()
+    }
+
+    /**
      * Drops a fresh copy of the selected model at the ghost's pose as a fully dynamic rigid body.
-     * Returns true if the object was placed.
+     * The ghost is destroyed before the (heavy) model load and rebuilt after — otherwise the
+     * ghost and the new entity peak together at ~2× the model's native size, which kills the
+     * process on large models on the emulator. Returns true if the object was placed.
      */
     suspend fun drop(): Boolean {
         val file = modelFile ?: return false
@@ -512,17 +556,23 @@ internal class PlacementController {
         val position = ghostTransform?.position ?: return false
         val rotation = ghostTransform?.quaternion
         val scaleVector = ghostTransform?.scaleVector ?: Vector3(scale, scale, scale)
-        return spawnPlaced(
-            file = file,
-            displayName = selectedModelName ?: file.nameWithoutExtension,
-            positionLocal = position,
-            scaleVector = scaleVector,
-            center = modelCenter,
-            halfExtents = modelHalfExtents,
-            rotation = rotation,
-            yawDegrees = null,
-            allowConvexFallback = true,
-        )
+
+        releaseSelectionResources()
+        val placed =
+            spawnPlaced(
+                file = file,
+                displayName = selectedModelName ?: file.nameWithoutExtension,
+                positionLocal = position,
+                scaleVector = scaleVector,
+                center = modelCenter,
+                halfExtents = modelHalfExtents,
+                rotation = rotation,
+                yawDegrees = null,
+                allowConvexFallback = true,
+            )
+        // Restore the preview for the next drop (keeps the model selection).
+        reloadSelection()
+        return placed
     }
 
     /**

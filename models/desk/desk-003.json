@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-24T18:27:36.763Z",
+  "identity": {
+    "id": "desk-003",
+    "name": "吧台",
+    "description": null,
+    "status": "draft"
+  },
+  "classification": {
+    "category": "dining_table",
+    "room_types": [
+      "living_room",
+      "dining_room",
+      "kitchen"
+    ]
+  },
+  "asset": {
+    "format": "glb",
+    "glb_url": null,
+    "thumbnail_url": null,
+    "file_size_bytes": null,
+    "sha256": null
+  },
+  "source_and_license": {
+    "provider": null,
+    "asset_id": null,
+    "page_url": null,
+    "author": null,
+    "license_spdx": null,
+    "license_url": null,
+    "attribution_required": null,
+    "hosting_policy": null
+  },
+  "geometry": {
+    "width_m": 1.37,
+    "depth_m": 1.89,
+    "height_m": 1.05,
+    "vertex_count": null,
+    "triangle_count": null,
+    "material_count": null,
+    "texture_count": null
+  },
+  "coordinate_system": {
+    "unit": "m",
+    "up_axis": "+Y",
+    "forward_axis": "+Z",
+    "origin_rule": "bottom_center"
+  },
+  "appearance": {
+    "colors": [
+      {
+        "hex": "#9F7823",
+        "role": "primary",
+        "coverage_ratio": 0.8
+      },
+      {
+        "hex": "#080807",
+        "role": "secondary",
+        "coverage_ratio": 0.2
+      }
+    ],
+    "materials": [
+      {
+        "material_id": "natural_wood",
+        "coverage_ratio": 0.8
+      },
+      {
+        "material_id": "metal",
+        "coverage_ratio": 0.2
+      }
+    ]
+  },
+  "feature_scores": {
+    "form.rectilinear": 0.95,
+    "form.curved": null,
+    "form.symmetrical": 0.5,
+    "form.low_profile": null,
+    "form.visual_weight": null,
+    "form.geometric_simplicity": null,
+    "surface.ornamentation": 0.71,
+    "surface.roughness": null,
+    "surface.handcrafted": null,
+    "surface.aged": null,
+    "surface.natural_imperfection": null,
+    "construction.modular": null,
+    "construction.flat_pack_likelihood": null,
+    "construction.exposed_metal": null
+  },
+  "construction": {
+    "assembly_type": "fixed",
+    "detachable": false,
+    "support_type": "floor_base"
+  },
+  "placement": {
+    "support_surface": "floor",
+    "against_wall": false,
+    "front_clearance_m": null,
+    "side_clearance_m": null
+  },
+  "style_assessment": {
+    "score_scale": "0_to_1",
+    "scores": {
+      "style.nordic": {
+        "score": 0.56,
+        "score_origin": "human_input"
+      },
+      "style.wabi_sabi": {
+        "score": null,
+        "score_origin": null
+      },
+      "style.ikea_functional": {
+        "score": 0.63,
+        "score_origin": "human_input"
+      },
+      "style.chinese": {
+        "score": null,
+        "score_origin": null,
+        "variants": {
+          "variant.traditional_chinese": {
+            "score": null,
+            "score_origin": null
+          },
+          "variant.neo_chinese": {
+            "score": null,
+            "score_origin": null
+          }
+        }
+      },
+      "style.industrial": {
+        "score": null,
+        "score_origin": null
+      }
+    },
+    "assessment_notes": null
+  },
+  "notes": null
+}

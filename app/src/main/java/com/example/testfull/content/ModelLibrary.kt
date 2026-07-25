@@ -74,6 +74,11 @@ private val DETAIL_SECTIONS =
         "construction",
         "geometry",
         "notes",
+        // Surface-texture schema sections.
+        "type",
+        "maps",
+        "material",
+        "tiling",
     )
 
 /**
@@ -116,17 +121,62 @@ private fun stripEmpty(value: Any?): Any? =
     }
 
 /**
+ * Reads the raw text of a model's sidecar (`<name>.json`), or null when absent/unreadable.
+ */
+internal fun readModelSidecarRaw(modelFile: File): String? {
+    val sidecar = File(modelFile.parentFile, modelFile.nameWithoutExtension + ".json")
+    if (!sidecar.isFile) return null
+    return runCatching { sidecar.readText().trim() }.getOrNull()?.ifEmpty { null }
+}
+
+/**
  * Reads the optional sidecar detail file for a model (`<name>.json` next to `<name>.glb`) and
  * distills it via [distillModelDetails]. Returns null when absent or unreadable — the AI is
  * told to infer those properties from the model name in that case.
  */
-internal fun readModelDetails(modelFile: File): String? {
-    val sidecar = File(modelFile.parentFile, modelFile.nameWithoutExtension + ".json")
-    if (!sidecar.isFile) return null
-    return runCatching { sidecar.readText().trim() }
-        .getOrNull()
-        ?.ifEmpty { null }
-        ?.let { distillModelDetails(it) }
+internal fun readModelDetails(modelFile: File): String? =
+    readModelSidecarRaw(modelFile)?.let { distillModelDetails(it) }
+
+/**
+ * The intended real-world size from a furniture sidecar: geometry.width_m/depth_m/height_m
+ * (x = width, y = height, z = depth). Null when any of them is missing or non-positive —
+ * meaning the model's authored units are already its real size.
+ */
+internal fun parseIntendedSize(sidecarJson: String?): Vector3? {
+    if (sidecarJson == null) return null
+    val geometry =
+        runCatching { JSONObject(sidecarJson).optJSONObject("geometry") }.getOrNull()
+            ?: return null
+    val width = geometry.optDouble("width_m", Double.NaN)
+    val depth = geometry.optDouble("depth_m", Double.NaN)
+    val height = geometry.optDouble("height_m", Double.NaN)
+    if (width.isNaN() || depth.isNaN() || height.isNaN()) return null
+    if (width <= 0 || depth <= 0 || height <= 0) return null
+    return Vector3(width.toFloat(), height.toFloat(), depth.toFloat())
+}
+
+/** Ratios within this band of their mean count as axis-consistent (uniformly scaled export). */
+private const val SCALE_CONSISTENCY_TOLERANCE = 0.15f
+
+/**
+ * The uniform scale that brings a model to its intended real-world size: intended/measured
+ * per axis. When the axes agree (a cleanly re-scalable export), their mean is used; when they
+ * disagree (an axis-skewed export no uniform scale can fix), the width ratio wins as the most
+ * important horizontal dimension. Null intended size (or degenerate measurements) means 1.
+ */
+internal fun computeDefaultScale(measuredSize: Vector3, intendedSize: Vector3?): Float {
+    if (intendedSize == null) return 1f
+    val ratios =
+        listOf(
+                intendedSize.x / measuredSize.x,
+                intendedSize.y / measuredSize.y,
+                intendedSize.z / measuredSize.z,
+            )
+            .filter { it.isFinite() && it > 0f }
+    if (ratios.isEmpty()) return 1f
+    val mean = ratios.average().toFloat()
+    val consistent = ratios.all { kotlin.math.abs(it - mean) / mean <= SCALE_CONSISTENCY_TOLERANCE }
+    return if (consistent) mean else ratios[0]
 }
 
 /** Measured bounds of a model file: bbox center, half-extents, and pivot-to-bottom distance. */
@@ -135,6 +185,81 @@ internal data class ModelBounds(
     val halfExtents: Vector3,
     val bottomOffset: Float,
 )
+
+/** File name of the on-device measured-bounds cache inside the models directory. */
+private const val BOUNDS_CACHE_FILE = ".bounds-cache.json"
+
+/** A cached measurement; valid only while the model file's mtime matches [mtimeMs]. */
+internal data class CachedBounds(
+    val center: Vector3,
+    val halfExtents: Vector3,
+    val bottomOffset: Float,
+    val mtimeMs: Long,
+) {
+    fun toModelBounds(): ModelBounds = ModelBounds(center, halfExtents, bottomOffset)
+}
+
+/**
+ * Reads the measured-bounds cache from [directory]. Measuring a model loads the whole mesh
+ * through the (slow, memory-hungry) native loader, so results are persisted across sessions.
+ */
+internal fun readBoundsCache(directory: File): MutableMap<String, CachedBounds> {
+    val file = File(directory, BOUNDS_CACHE_FILE)
+    if (!file.isFile) return mutableMapOf()
+    return runCatching {
+            val root = JSONObject(file.readText())
+            val map = mutableMapOf<String, CachedBounds>()
+            root.keys().forEach { key ->
+                val entry = root.optJSONObject(key) ?: return@forEach
+                val center = entry.optJSONArray("c")
+                val half = entry.optJSONArray("h")
+                if (center != null && half != null && center.length() == 3 && half.length() == 3) {
+                    map[key] =
+                        CachedBounds(
+                            center =
+                                Vector3(
+                                    center.optDouble(0).toFloat(),
+                                    center.optDouble(1).toFloat(),
+                                    center.optDouble(2).toFloat(),
+                                ),
+                            halfExtents =
+                                Vector3(
+                                    half.optDouble(0).toFloat(),
+                                    half.optDouble(1).toFloat(),
+                                    half.optDouble(2).toFloat(),
+                                ),
+                            bottomOffset = entry.optDouble("b", 0.0).toFloat(),
+                            mtimeMs = entry.optLong("m", 0L),
+                        )
+                }
+            }
+            map
+        }
+        .getOrDefault(mutableMapOf())
+}
+
+/** Persists the bounds cache (best effort; failures are non-fatal to catalog building). */
+internal fun writeBoundsCache(directory: File, cache: Map<String, CachedBounds>) {
+    runCatching {
+        val root = JSONObject()
+        cache.forEach { (key, entry) ->
+            root.put(
+                key,
+                JSONObject()
+                    .put("c", JSONArray(listOf(entry.center.x, entry.center.y, entry.center.z)))
+                    .put(
+                        "h",
+                        JSONArray(
+                            listOf(entry.halfExtents.x, entry.halfExtents.y, entry.halfExtents.z)
+                        ),
+                    )
+                    .put("b", entry.bottomOffset.toDouble())
+                    .put("m", entry.mtimeMs),
+            )
+        }
+        File(directory, BOUNDS_CACHE_FILE).writeText(root.toString())
+    }
+}
 
 /**
  * Loads [file] just long enough to read its bounding box, then destroys the probe entity.

@@ -15,6 +15,7 @@ import com.example.testfull.BuildConfig
 import com.pico.spatial.core.ecs.Entity
 import com.pico.spatial.core.ecs.TransformComponent
 import com.pico.spatial.core.ecs.resource.AssetBundle
+import com.pico.spatial.core.math.EulerAngles
 import com.pico.spatial.core.math.Quat
 import com.pico.spatial.core.math.Vector3
 import com.pico.spatial.tracking.controller.ControllerTrackingProvider
@@ -39,6 +40,36 @@ private data class RoomNavigationPosition(
     val x: Float = 0f,
     val z: Float = 0f,
 )
+
+/** Smoothed pose of the view-following placement HUD. */
+private class HudFollowState {
+    var position: Vector3? = null
+    var yaw: Float = 0f
+    var lastUpdateAt: Long = 0L
+}
+
+/** Shortest-arc interpolation between two yaw angles, in degrees. */
+private fun lerpAngleDegrees(from: Float, to: Float, t: Float): Float {
+    var delta = (to - from) % 360f
+    if (delta > 180f) delta -= 360f
+    if (delta < -180f) delta += 360f
+    return from + delta * t
+}
+
+private fun angleDeltaDegrees(a: Float, b: Float): Float {
+    var delta = (b - a) % 360f
+    if (delta > 180f) delta -= 360f
+    if (delta < -180f) delta += 360f
+    return kotlin.math.abs(delta)
+}
+
+// The HUD redraws its whole surface on every transform change — on the emulator a
+// per-frame move is enough to trip the ANR watchdog. Rate-limit updates and ignore
+// sub-centimeter jitter; snap instantly when the user turned far away instead.
+private const val HUD_UPDATE_INTERVAL_MS = 150L
+private const val HUD_SNAP_DISTANCE_METERS = 0.6f
+private const val HUD_MIN_MOVE_METERS = 0.02f
+private const val HUD_MIN_YAW_DEGREES = 2f
 
 /** Thread-safe slot for the latest tracking data; providers post off the main thread. */
 private class AimState {
@@ -107,6 +138,46 @@ private fun localOpenings(plan: FloorPlan): List<OpeningDesc> {
     }
 }
 
+private fun defaultRoughness(slot: SurfaceSlot): Float =
+    when (slot) {
+        SurfaceSlot.WALL -> 0.82f
+        SurfaceSlot.FLOOR -> 0.9f
+        SurfaceSlot.CEILING -> 0.92f
+        SurfaceSlot.DOOR -> 0.68f
+        SurfaceSlot.WINDOW -> 0.1f
+    }
+
+/**
+ * Resolves the per-slot texture selections into loaded [TexturedSurface]s for [generateRoom].
+ * Loads happen through [cache] (shared across rebuilds); slots with no selection, an unknown
+ * name, or a failed load stay at their default flat material.
+ */
+private suspend fun resolveRoomTextures(
+    selection: Map<SurfaceSlot, String?>,
+    catalog: List<TextureSpec>,
+    cache: TextureCache,
+): RoomTextures {
+    suspend fun slot(slot: SurfaceSlot): TexturedSurface? {
+        val name = selection[slot] ?: return null
+        val spec = catalog.firstOrNull { it.displayName == name } ?: return null
+        val base = cache.load(spec.file) ?: return null
+        val normal = spec.normalMap?.let { cache.load(it) }
+        return TexturedSurface(
+            baseColor = base,
+            normal = normal,
+            roughness = spec.roughness ?: defaultRoughness(slot),
+            metallic = spec.metallic ?: 0f,
+        )
+    }
+    return RoomTextures(
+        wall = slot(SurfaceSlot.WALL),
+        floor = slot(SurfaceSlot.FLOOR),
+        ceiling = slot(SurfaceSlot.CEILING),
+        door = slot(SurfaceSlot.DOOR),
+        window = slot(SurfaceSlot.WINDOW),
+    )
+}
+
 @Composable
 fun HomeStage() {
     var selectedEnvironment by remember { mutableStateOf(AppEnvironment.ROOM) }
@@ -126,6 +197,7 @@ fun HomeStage() {
     val scope = rememberCoroutineScope()
     val placementController = remember { PlacementController() }
     val aimState = remember { AimState() }
+    val hudFollow = remember { HudFollowState() }
     val controllerProvider = remember { ControllerTrackingProvider() }
     val hmdProvider = remember { HMDTrackingProvider() }
     var availableModels by remember { mutableStateOf<List<LibraryModel>>(emptyList()) }
@@ -140,6 +212,12 @@ fun HomeStage() {
     var aiPrompt by remember { mutableStateOf("") }
     var aiBusy by remember { mutableStateOf(false) }
     var aiStatus by remember { mutableStateOf("") }
+
+    // --- Surface texture state ---
+    var availableTextures by remember { mutableStateOf<List<TextureSpec>>(emptyList()) }
+    var selectedTextures by remember { mutableStateOf<Map<SurfaceSlot, String?>>(emptyMap()) }
+    var roomTextures by remember { mutableStateOf(RoomTextures()) }
+    val textureCache = remember { TextureCache() }
 
     // Single entry point for AI arranging, used by the panel button and the debug hook.
     val runAiArrange: () -> Unit = runAiArrange@{
@@ -157,6 +235,9 @@ fun HomeStage() {
                 // "Scan models folder".
                 if (availableModels.isEmpty()) {
                     availableModels = scanModels(context)
+                }
+                if (availableTextures.isEmpty()) {
+                    availableTextures = scanTextures(context)
                 }
                 if (modelCatalog.isEmpty()) {
                     aiStatus = "Measuring models…"
@@ -177,6 +258,7 @@ fun HomeStage() {
                         openings = openings,
                         catalog = modelCatalog,
                         currentPlacements = placementController.placedSummaries(),
+                        textureCatalog = availableTextures,
                     )
                 val resolved =
                     resolveAiPlacements(
@@ -185,8 +267,38 @@ fun HomeStage() {
                         walls = footprintWalls,
                         baseMargin = footprintMargin,
                     )
+                // Surface reskins requested by the AI: rebuild the room FIRST (a rebuild
+                // destroys placed furniture — which we're about to replace anyway) and wait
+                // for it, so the spawns below land in the new room.
+                var textureNote = ""
+                if (layout.textures.isNotEmpty()) {
+                    val resolvedTextures = resolveAiTextures(layout.textures, availableTextures)
+                    if (resolvedTextures.skipped.isNotEmpty()) {
+                        textureNote =
+                            " Textures skipped: " +
+                                resolvedTextures.skipped.joinToString(", ") + "."
+                    }
+                    if (resolvedTextures.resolved.isNotEmpty()) {
+                        aiStatus = "Applying textures…"
+                        selectedTextures =
+                            selectedTextures +
+                                resolvedTextures.resolved.mapValues { it.value.displayName }
+                        roomTextures =
+                            resolveRoomTextures(selectedTextures, availableTextures, textureCache)
+                        val oldRoom = generatedRoom.room
+                        applyRevision += 1
+                        var waited = 0
+                        while (generatedRoom.room === oldRoom && waited < 200) {
+                            delay(100)
+                            waited++
+                        }
+                    }
+                }
                 // Apply = replace: the AI's layout is the full desired state, which also
-                // covers "move the existing furniture".
+                // covers "move the existing furniture". Free the ghost too: a large one
+                // plus the spawn sequence trips the kernel low-memory killer. It is
+                // rebuilt after the run (see finally).
+                placementController.releaseSelectionGhost()
                 placementController.clearPlaced()
                 var spawned = 0
                 resolved.accepted.forEach { placement ->
@@ -209,6 +321,7 @@ fun HomeStage() {
                 aiStatus =
                     buildString {
                         append("AI placed $spawned of ${layout.placements.size}.")
+                        append(textureNote)
                         if (resolved.adjusted.isNotEmpty()) {
                             append(" Adjusted: ")
                             append(resolved.adjusted.joinToString(", "))
@@ -227,6 +340,11 @@ fun HomeStage() {
                 aiStatus = "AI arrange failed: ${error.message}"
             } finally {
                 aiBusy = false
+                // The ghost was released to keep memory low during the spawn sequence;
+                // rebuild it now so manual placing continues where it left off.
+                if (selectedModelName != null) {
+                    placementController.reloadSelection()
+                }
             }
         }
     }
@@ -331,7 +449,10 @@ fun HomeStage() {
     }
 
     DisposableEffect(Unit) {
-        onDispose { placementController.dispose() }
+        onDispose {
+            placementController.dispose()
+            textureCache.close()
+        }
     }
 
     // Debug-only test hook: an ai_test_prompt.txt pushed into the app's files dir runs the AI
@@ -345,9 +466,39 @@ fun HomeStage() {
                     val prompt = runCatching { triggerFile.readText().trim() }.getOrDefault("")
                     runCatching { triggerFile.delete() }
                     Log.w(TAG, "debug hook: prompt file -> \"$prompt\"")
-                    if (prompt.isNotEmpty()) {
-                        aiPrompt = prompt
-                        runAiArrange()
+                    when {
+                        prompt.isEmpty() -> Unit
+                        // "place:<name>" simulates picking a model: selects it and turns
+                        // placing on (drives the view-following placement HUD without a
+                        // controller).
+                        prompt.startsWith("place:") -> {
+                            val query = prompt.removePrefix("place:")
+                            val model =
+                                scanModels(context).firstOrNull {
+                                    it.displayName.contains(query, ignoreCase = true)
+                                } ?: scanModels(context).firstOrNull()
+                            if (model == null) {
+                                Log.w(TAG, "debug hook: no model for '$query'")
+                            } else {
+                                availableModels = scanModels(context)
+                                scope.launch {
+                                    if (
+                                        placementController.selectModel(
+                                            model.file,
+                                            model.displayName,
+                                        )
+                                    ) {
+                                        selectedModelName = model.displayName
+                                        placementActive = true
+                                        Log.w(TAG, "debug hook: placing ${model.displayName}")
+                                    }
+                                }
+                            }
+                        }
+                        else -> {
+                            aiPrompt = prompt
+                            runAiArrange()
+                        }
                     }
                 }
                 delay(1000)
@@ -360,7 +511,7 @@ fun HomeStage() {
             val failures = mutableListOf<String>()
 
             try {
-                val room = generateRoom(appliedPlan)
+                val room = generateRoom(appliedPlan, roomTextures)
                 room.setVirtualUserPosition(
                     roomNavigationPosition.x,
                     roomNavigationPosition.z,
@@ -417,14 +568,93 @@ fun HomeStage() {
                     else -> "The room could not be generated."
                 }
 
-            attachments.entity(id = "floor-plan-designer")?.apply {
+            listOf("room-plan", "furniture-library", "ai-arrange", "placement-hud").forEach {
+                Log.w(TAG, "attachment entity($it) = ${attachments.entity(id = it) != null}")
+            }
+            attachments.entity(id = "room-plan")?.apply {
                 components[TransformComponent::class.java]?.setPosition(
-                    Vector3(0f, 1.35f, -0.85f)
+                    Vector3(0f, 1.4f, -1.3f)
+                )
+                content.addEntity(this)
+            }
+            attachments.entity(id = "furniture-library")?.apply {
+                components[TransformComponent::class.java]?.apply {
+                    setPosition(Vector3(-0.62f, 1.3f, -1.05f))
+                    setEulerAngles(EulerAngles(yaw = 30f))
+                }
+                content.addEntity(this)
+            }
+            attachments.entity(id = "ai-arrange")?.apply {
+                components[TransformComponent::class.java]?.apply {
+                    setPosition(Vector3(0.62f, 1.3f, -1.05f))
+                    setEulerAngles(EulerAngles(yaw = -30f))
+                }
+                content.addEntity(this)
+            }
+            // The placement HUD starts hidden; the update loop shows it and glues it to the
+            // user's view while placing.
+            attachments.entity(id = "placement-hud")?.apply {
+                enabled = false
+                components[TransformComponent::class.java]?.setPosition(
+                    Vector3(0f, 1.2f, -0.7f)
                 )
                 content.addEntity(this)
             }
         },
-        update = { content, _ ->
+        update = { content, attachments ->
+            // Placement HUD: visible only while placing, floating ahead of the headset so the
+            // Drop button is always within reach. Updates are rate-limited with a jitter dead
+            // zone — re-posing it every frame keeps its surface redrawing, which trips the
+            // ANR watchdog on the emulator.
+            attachments.entity(id = "placement-hud")?.let { hud ->
+                val show = placementActive && selectedModelName != null
+                if (hud.enabled != show) hud.enabled = show
+                if (show) {
+                    val hmdPos = aimState.hmdPosition
+                    val hmdRot = aimState.hmdRotation
+                    if (hmdPos != null && hmdRot != null) {
+                        val now = System.currentTimeMillis()
+                        if (now - hudFollow.lastUpdateAt >= HUD_UPDATE_INTERVAL_MS) {
+                            val forward = hmdRot.rotateVector(Vector3(0f, 0f, -1f))
+                            val target =
+                                Vector3(
+                                    hmdPos.x + forward.x * 1.1f,
+                                    hmdPos.y - 0.2f,
+                                    hmdPos.z + forward.z * 1.1f,
+                                )
+                            val targetYaw = yawFacingUserDegrees(target, hmdPos)
+                            val current = hudFollow.position
+                            val distance =
+                                if (current == null) {
+                                    Float.MAX_VALUE
+                                } else {
+                                    (target - current).length()
+                                }
+                            val next =
+                                if (current == null || distance > HUD_SNAP_DISTANCE_METERS) {
+                                    target
+                                } else {
+                                    current + (target - current) * 0.35f
+                                }
+                            val nextYaw = lerpAngleDegrees(hudFollow.yaw, targetYaw, 0.35f)
+                            if (
+                                distance > HUD_MIN_MOVE_METERS ||
+                                    angleDeltaDegrees(hudFollow.yaw, targetYaw) >
+                                        HUD_MIN_YAW_DEGREES
+                            ) {
+                                hudFollow.lastUpdateAt = now
+                                hudFollow.position = next
+                                hudFollow.yaw = nextYaw
+                                hud.components[TransformComponent::class.java]?.apply {
+                                    setPosition(next)
+                                    setEulerAngles(EulerAngles(yaw = nextYaw))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             generatedRoom.room?.setVirtualUserPosition(
                 roomNavigationPosition.x,
                 roomNavigationPosition.z,
@@ -432,7 +662,7 @@ fun HomeStage() {
 
             if (generatedRoom.revision != applyRevision) {
                 generatedRoom.revision = applyRevision
-                runCatching { generateRoom(appliedPlan) }
+                runCatching { generateRoom(appliedPlan, roomTextures) }
                     .onSuccess { nextRoom ->
                         nextRoom.setVirtualUserPosition(
                             roomNavigationPosition.x,
@@ -471,7 +701,9 @@ fun HomeStage() {
                         placementController.bind(nextRoom.navigationRoot)
                         val (footprintWalls, footprintMargin) = localFootprint(appliedPlan)
                         placementController.setFootprint(footprintWalls, footprintMargin)
-                        if (selectedModelName != null) {
+                        // While an AI arrange is spawning into the new room, don't also
+                        // reload the ghost — concurrent heavy loads killed the process.
+                        if (selectedModelName != null && !aiBusy) {
                             scope.launch { placementController.reloadSelection() }
                         }
                         roomAvailable = true
@@ -516,7 +748,7 @@ fun HomeStage() {
             }
         },
         attachments = {
-            AttachmentPanel(id = "floor-plan-designer") {
+            AttachmentPanel(id = "room-plan") {
                 FloorPlanExperiencePanel(
                     plan = draftPlan,
                     appliedPlan = appliedPlan,
@@ -557,13 +789,18 @@ fun HomeStage() {
                         selectedEnvironment = AppEnvironment.ROOM
                     },
                     onExpandedChange = { editorExpanded = it },
+                )
+            }
+            AttachmentPanel(id = "furniture-library") {
+                FurnitureLibraryPanel(
                     availableModels = availableModels,
                     selectedModelName = selectedModelName,
-                    placementActive = placementActive,
                     modelScale = modelScale,
                     placedCount = placedCount,
+                    roomAvailable = roomAvailable,
                     onScanModels = {
                         availableModels = scanModels(context)
+                        availableTextures = scanTextures(context)
                         scope.launch {
                             modelCatalog = buildCatalog(availableModels)
                             aiStatus =
@@ -575,17 +812,20 @@ fun HomeStage() {
                         scope.launch {
                             if (placementController.selectModel(model.file, model.displayName)) {
                                 selectedModelName = model.displayName
-                                placementController.scale = modelScale
+                                // Start the slider at the model's intended real-world scale
+                                // (sidecar geometry vs measured bounds); 1 when unknown.
+                                val defaultScale =
+                                    modelCatalog
+                                        .firstOrNull { it.displayName == model.displayName }
+                                        ?.defaultScale ?: 1f
+                                modelScale = defaultScale
+                                placementController.scale = defaultScale
                                 placementActive = true
                             } else {
                                 selectedModelName = null
                                 status = "Could not load model ${model.displayName}."
                             }
                         }
-                    },
-                    onPlacementActiveChange = { active ->
-                        placementActive = active
-                        if (!active) placementController.hideGhost()
                     },
                     onModelScaleChange = { newScale ->
                         modelScale = newScale
@@ -595,7 +835,19 @@ fun HomeStage() {
                         placementController.clearPlaced()
                         placedCount = 0
                     },
+                )
+            }
+            AttachmentPanel(id = "placement-hud") {
+                PlacementHudPanel(
+                    selectedModelName = selectedModelName,
+                    placementActive = placementActive,
+                    placedCount = placedCount,
                     aimStatus = aimStatus,
+                    roomAvailable = roomAvailable,
+                    onPlacementActiveChange = { active ->
+                        placementActive = active
+                        if (!active) placementController.hideGhost()
+                    },
                     onDropNow = {
                         scope.launch {
                             if (placementController.drop()) {
@@ -603,11 +855,42 @@ fun HomeStage() {
                             }
                         }
                     },
+                    onClearPlaced = {
+                        placementController.clearPlaced()
+                        placedCount = 0
+                    },
+                )
+            }
+            AttachmentPanel(id = "ai-arrange") {
+                AiArrangePanel(
                     aiPrompt = aiPrompt,
                     aiBusy = aiBusy,
                     aiStatus = aiStatus,
+                    roomAvailable = roomAvailable,
                     onAiPromptChange = { aiPrompt = it },
                     onArrangeWithAi = runAiArrange,
+                    availableTextures = availableTextures,
+                    selectedTextures = selectedTextures,
+                    onTextureSlotChange = { slot, name ->
+                        selectedTextures =
+                            if (name == null) {
+                                selectedTextures - slot
+                            } else {
+                                selectedTextures + (slot to name)
+                            }
+                    },
+                    onApplyTextures = {
+                        scope.launch {
+                            aiStatus = "Applying textures…"
+                            roomTextures =
+                                resolveRoomTextures(
+                                    selectedTextures,
+                                    availableTextures,
+                                    textureCache,
+                                )
+                            applyRevision += 1
+                        }
+                    },
                 )
             }
         },

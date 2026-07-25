@@ -1,7 +1,11 @@
 package com.example.testfull.content
 
+import com.pico.spatial.core.math.Vector3
+import java.io.File
+import kotlin.math.hypot
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -56,5 +60,80 @@ class ModelLibraryTest {
     @Test
     fun distillModelDetailsFallsBackOnGarbage() {
         assertEquals("not json", distillModelDetails("not json"))
+    }
+
+    @Test
+    fun parseIntendedSizeReadsGeometry() {
+        val raw = """{"geometry":{"width_m":2.35,"depth_m":0.95,"height_m":0.9}}"""
+        val size = parseIntendedSize(raw)!!
+        assertEquals(2.35f, size.x, 0.0001f)
+        assertEquals(0.9f, size.y, 0.0001f)
+        assertEquals(0.95f, size.z, 0.0001f)
+
+        assertNull(parseIntendedSize(null))
+        assertNull(parseIntendedSize("""{"geometry":{"width_m":null}}"""))
+        assertNull(parseIntendedSize("""{"geometry":{"width_m":-1,"depth_m":1,"height_m":1}}"""))
+    }
+
+    @Test
+    fun computeDefaultScaleUsesMeanForConsistentAndWidthForSkewed() {
+        // Clean, uniformly-scaled export: the mean ratio.
+        assertEquals(
+            2f,
+            computeDefaultScale(Vector3(1f, 1f, 1f), Vector3(2f, 2f, 2f)),
+            0.0001f,
+        )
+        // Axis-skewed export (sofa-001-like): the width ratio wins.
+        val scale =
+            computeDefaultScale(
+                Vector3(4239.9f, 2535.6f, 3344.6f),
+                Vector3(2.35f, 0.9f, 0.95f),
+            )
+        assertEquals(2.35f / 4239.9f, scale, 0.000001f)
+        // No intended size → identity.
+        assertEquals(1f, computeDefaultScale(Vector3(1f, 1f, 1f), null), 0.0001f)
+    }
+
+    @Test
+    fun boundsCacheRoundTrips() {
+        val dir = createTempDir()
+        try {
+            val cache =
+                mutableMapOf(
+                    "/models/bed-001.glb" to
+                        CachedBounds(
+                            center = Vector3(0.1f, 0.2f, 0.3f),
+                            halfExtents = Vector3(1f, 0.5f, 0.8f),
+                            bottomOffset = 0.17f,
+                            mtimeMs = 123456789L,
+                        )
+                )
+            writeBoundsCache(dir, cache)
+
+            val read = readBoundsCache(dir)
+            val entry = read.getValue("/models/bed-001.glb")
+            assertEquals(0.1f, entry.center.x, 0.0001f)
+            assertEquals(0.5f, entry.halfExtents.y, 0.0001f)
+            assertEquals(0.8f, entry.halfExtents.z, 0.0001f)
+            assertEquals(0.17f, entry.bottomOffset, 0.0001f)
+            assertEquals(123456789L, entry.mtimeMs)
+            val bounds = entry.toModelBounds()
+            assertEquals(entry.center, bounds.center)
+            assertEquals(entry.halfExtents, bounds.halfExtents)
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun boundsCacheToleratesMissingOrGarbage() {
+        val dir = createTempDir()
+        try {
+            assertTrue(readBoundsCache(dir).isEmpty())
+            File(dir, ".bounds-cache.json").writeText("not json")
+            assertTrue(readBoundsCache(dir).isEmpty())
+        } finally {
+            dir.deleteRecursively()
+        }
     }
 }

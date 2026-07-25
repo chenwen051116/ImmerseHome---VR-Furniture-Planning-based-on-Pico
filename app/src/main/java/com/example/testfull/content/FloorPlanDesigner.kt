@@ -26,6 +26,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -45,7 +46,6 @@ import com.pico.spatial.ui.design.NumberField
 import com.pico.spatial.ui.design.NumberFieldDefaults
 import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.design.Text
-import com.pico.spatial.ui.design.TextField
 import com.pico.spatial.ui.design.ToggleButton
 import com.pico.spatial.ui.design.ToggleButtonDefaults
 import com.pico.spatial.ui.foundation.material.backgroundMaterial
@@ -114,23 +114,6 @@ internal fun FloorPlanExperiencePanel(
     onMoveInRoom: (deltaX: Float, deltaZ: Float) -> Unit,
     onResetRoomPosition: () -> Unit,
     onExpandedChange: (Boolean) -> Unit,
-    availableModels: List<LibraryModel>,
-    selectedModelName: String?,
-    placementActive: Boolean,
-    modelScale: Float,
-    placedCount: Int,
-    onScanModels: () -> Unit,
-    onModelSelected: (LibraryModel) -> Unit,
-    onPlacementActiveChange: (Boolean) -> Unit,
-    onModelScaleChange: (Float) -> Unit,
-    onClearPlaced: () -> Unit,
-    aimStatus: String,
-    onDropNow: () -> Unit,
-    aiPrompt: String,
-    aiBusy: Boolean,
-    aiStatus: String,
-    onAiPromptChange: (String) -> Unit,
-    onArrangeWithAi: () -> Unit,
 ) {
     if (!expanded) {
         CompactEnvironmentPanel(
@@ -144,9 +127,6 @@ internal fun FloorPlanExperiencePanel(
             onMoveInRoom = onMoveInRoom,
             onResetRoomPosition = onResetRoomPosition,
             onEditPlan = { onExpandedChange(true) },
-            placementActive = placementActive,
-            selectedModelName = selectedModelName,
-            placedCount = placedCount,
         )
         return
     }
@@ -166,23 +146,6 @@ internal fun FloorPlanExperiencePanel(
         },
         onEnvironmentSelected = onEnvironmentSelected,
         onCollapse = { onExpandedChange(false) },
-        availableModels = availableModels,
-        selectedModelName = selectedModelName,
-        placementActive = placementActive,
-        modelScale = modelScale,
-        placedCount = placedCount,
-        onScanModels = onScanModels,
-        onModelSelected = onModelSelected,
-        onPlacementActiveChange = onPlacementActiveChange,
-        onModelScaleChange = onModelScaleChange,
-        onClearPlaced = onClearPlaced,
-        aimStatus = aimStatus,
-        onDropNow = onDropNow,
-        aiPrompt = aiPrompt,
-        aiBusy = aiBusy,
-        aiStatus = aiStatus,
-        onAiPromptChange = onAiPromptChange,
-        onArrangeWithAi = onArrangeWithAi,
     )
 }
 
@@ -198,9 +161,6 @@ private fun CompactEnvironmentPanel(
     onMoveInRoom: (deltaX: Float, deltaZ: Float) -> Unit,
     onResetRoomPosition: () -> Unit,
     onEditPlan: () -> Unit,
-    placementActive: Boolean,
-    selectedModelName: String?,
-    placedCount: Int,
 ) {
     Column(
         modifier =
@@ -288,16 +248,6 @@ private fun CompactEnvironmentPanel(
             )
         }
         Spacer(Modifier.height(9.dp))
-        if (placementActive && selectedModelName != null) {
-            Text(
-                text =
-                    "Placing \"$selectedModelName\" ($placedCount dropped) — aim with the controller, click the trigger to drop. The ghost slides aside to avoid overlaps; red = no free space.",
-                style = PicoTheme.typography.titleMedium,
-                fontSize = 13.sp,
-                color = Color(0x99000000),
-            )
-            Spacer(Modifier.height(6.dp))
-        }
         Text(
             text =
                 "Use these controls to explore. Emulator W/A/S/D moves the headset and triggers PICO's safeguard fade.",
@@ -320,23 +270,6 @@ private fun FloorPlanDesigner(
     onApplyPlan: () -> Unit,
     onEnvironmentSelected: (AppEnvironment) -> Unit,
     onCollapse: () -> Unit,
-    availableModels: List<LibraryModel>,
-    selectedModelName: String?,
-    placementActive: Boolean,
-    modelScale: Float,
-    placedCount: Int,
-    onScanModels: () -> Unit,
-    onModelSelected: (LibraryModel) -> Unit,
-    onPlacementActiveChange: (Boolean) -> Unit,
-    onModelScaleChange: (Float) -> Unit,
-    onClearPlaced: () -> Unit,
-    aimStatus: String,
-    onDropNow: () -> Unit,
-    aiPrompt: String,
-    aiBusy: Boolean,
-    aiStatus: String,
-    onAiPromptChange: (String) -> Unit,
-    onArrangeWithAi: () -> Unit,
 ) {
     var mode by remember { mutableStateOf(DesignerMode.SELECT) }
     var selection by remember { mutableStateOf<PlanSelection?>(null) }
@@ -573,23 +506,6 @@ private fun FloorPlanDesigner(
                 applyEnabled = plan.walls.isNotEmpty(),
                 onApply = onApplyPlan,
                 roomAvailable = roomAvailable,
-                availableModels = availableModels,
-                selectedModelName = selectedModelName,
-                placementActive = placementActive,
-                modelScale = modelScale,
-                placedCount = placedCount,
-                onScanModels = onScanModels,
-                onModelSelected = onModelSelected,
-                onPlacementActiveChange = onPlacementActiveChange,
-                onModelScaleChange = onModelScaleChange,
-                onClearPlaced = onClearPlaced,
-                aimStatus = aimStatus,
-                onDropNow = onDropNow,
-                aiPrompt = aiPrompt,
-                aiBusy = aiBusy,
-                aiStatus = aiStatus,
-                onAiPromptChange = onAiPromptChange,
-                onArrangeWithAi = onArrangeWithAi,
             )
         }
     }
@@ -900,23 +816,6 @@ private fun Inspector(
     applyEnabled: Boolean,
     onApply: () -> Unit,
     roomAvailable: Boolean,
-    availableModels: List<LibraryModel>,
-    selectedModelName: String?,
-    placementActive: Boolean,
-    modelScale: Float,
-    placedCount: Int,
-    onScanModels: () -> Unit,
-    onModelSelected: (LibraryModel) -> Unit,
-    onPlacementActiveChange: (Boolean) -> Unit,
-    onModelScaleChange: (Float) -> Unit,
-    onClearPlaced: () -> Unit,
-    aimStatus: String,
-    onDropNow: () -> Unit,
-    aiPrompt: String,
-    aiBusy: Boolean,
-    aiStatus: String,
-    onAiPromptChange: (String) -> Unit,
-    onArrangeWithAi: () -> Unit,
 ) {
     val wall =
         if (selection?.kind == SelectionKind.WALL) {
@@ -1192,180 +1091,11 @@ private fun Inspector(
             Text("Apply & preview room")
         }
 
-        Spacer(Modifier.height(14.dp))
-        Text(
-            text = "Objects",
-            style = PicoTheme.typography.displaySmall,
-            fontSize = 21.sp,
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = "Push .glb/.gltf/.usda/.usdz files to this app's files/models folder, then scan.",
-            style = PicoTheme.typography.titleMedium,
-            fontSize = 13.sp,
-            color = Color(0x99000000),
-        )
-        Spacer(Modifier.height(8.dp))
-        Button(
-            onClick = onScanModels,
-            size = ButtonDefaults.Small,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(
-                if (availableModels.isEmpty()) {
-                    "Scan models folder"
-                } else {
-                    "Rescan (${availableModels.size} found)"
-                }
-            )
-        }
-        Spacer(Modifier.height(8.dp))
-        availableModels.take(MAX_LISTED_MODELS).forEach { model ->
-            EnvironmentButton(
-                label = model.displayName,
-                selected = model.displayName == selectedModelName,
-                enabled = roomAvailable,
-                onClick = { onModelSelected(model) },
-            )
-            Spacer(Modifier.height(6.dp))
-        }
-        if (availableModels.size > MAX_LISTED_MODELS) {
-            Text(
-                text = "…and ${availableModels.size - MAX_LISTED_MODELS} more (first $MAX_LISTED_MODELS shown)",
-                style = PicoTheme.typography.titleMedium,
-                fontSize = 12.sp,
-                color = Color(0x99000000),
-            )
-            Spacer(Modifier.height(6.dp))
-        }
-        if (selectedModelName != null) {
-            Button(
-                onClick = { onPlacementActiveChange(!placementActive) },
-                enabled = roomAvailable,
-                size = ButtonDefaults.Small,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(if (placementActive) "Placing: ON — stop" else "Placing: OFF — start")
-            }
-            Spacer(Modifier.height(8.dp))
-            DimensionField(
-                label = "Model scale",
-                value = modelScale * 100f,
-                step = 25f,
-                range = 5f..500f,
-                unit = "%",
-                fractionDigits = 0,
-                onChange = { value -> onModelScaleChange(value / 100f) },
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text =
-                    if (placementActive) {
-                        "Aim with the controller or your view — the ghost shows the resting pose. Click the trigger or tap Drop."
-                    } else {
-                        "Enable placing to aim and drop \"$selectedModelName\" with physics."
-                    },
-                style = PicoTheme.typography.titleMedium,
-                fontSize = 13.sp,
-                color = Color(0x99000000),
-            )
-            if (placementActive) {
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = aimStatus,
-                    style = PicoTheme.typography.titleMedium,
-                    fontSize = 12.sp,
-                    color = Color(0x99000000),
-                )
-                Spacer(Modifier.height(8.dp))
-                Button(
-                    onClick = onDropNow,
-                    enabled = roomAvailable,
-                    size = ButtonDefaults.Max,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Drop at ghost")
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-            Button(
-                onClick = onClearPlaced,
-                enabled = placedCount > 0,
-                size = ButtonDefaults.Small,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Clear placed ($placedCount)")
-            }
-        }
-
-        Spacer(Modifier.height(14.dp))
-        Text(
-            text = "AI Arrange",
-            style = PicoTheme.typography.displaySmall,
-            fontSize = 21.sp,
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text =
-                "Describe the layout — the AI picks library models and places them with " +
-                    "physics, replacing the furniture currently in the room.",
-            style = PicoTheme.typography.titleMedium,
-            fontSize = 13.sp,
-            color = Color(0x99000000),
-        )
-        Spacer(Modifier.height(8.dp))
-        TextField(
-            value = aiPrompt,
-            onValueChange = onAiPromptChange,
-            placeholder = {
-                Text(
-                    "e.g. cozy living room for movie night",
-                    fontSize = 13.sp,
-                )
-            },
-            singleLine = false,
-            minLines = 2,
-            enabled = roomAvailable && !aiBusy,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(6.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
-                onClick = { onAiPromptChange("Cozy living room for movie night") },
-                size = ButtonDefaults.Small,
-            ) {
-                Text("Cozy")
-            }
-            Button(
-                onClick = { onAiPromptChange("Dining setup for two") },
-                size = ButtonDefaults.Small,
-            ) {
-                Text("Dining")
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-        Button(
-            onClick = onArrangeWithAi,
-            enabled = roomAvailable && !aiBusy && aiPrompt.isNotBlank(),
-            size = ButtonDefaults.Max,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(if (aiBusy) "AI arranging…" else "Arrange with AI")
-        }
-        if (aiStatus.isNotEmpty()) {
-            Spacer(Modifier.height(6.dp))
-            Text(
-                text = aiStatus,
-                style = PicoTheme.typography.titleMedium,
-                fontSize = 12.sp,
-                color = Color(0x99000000),
-            )
-        }
     }
 }
 
 @Composable
-private fun DimensionField(
+internal fun DimensionField(
     label: String,
     value: Float,
     step: Float,
@@ -1411,7 +1141,7 @@ private fun OpeningTypeButton(
 }
 
 @Composable
-private fun EnvironmentButton(
+internal fun EnvironmentButton(
     label: String,
     selected: Boolean,
     enabled: Boolean,
@@ -1525,3 +1255,54 @@ private fun FloorPlan.updateOpening(
 
 private fun formatMeters(value: Float): String =
     String.format(Locale.US, "%.2f m", value)
+
+/** One texture slot row: surface label, < > cycle buttons, current selection name. */
+@Composable
+internal fun TextureSlotRow(
+    label: String,
+    current: String?,
+    options: List<String?>,
+    enabled: Boolean,
+    onChange: (String?) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = label,
+            style = PicoTheme.typography.titleMedium,
+            fontSize = 14.sp,
+            modifier = Modifier.width(64.dp),
+        )
+        Button(
+            onClick = { onChange(cycleOption(options, current, -1)) },
+            enabled = enabled && options.size > 1,
+            size = ButtonDefaults.Small,
+        ) {
+            Text("<")
+        }
+        Text(
+            text = current ?: "Default",
+            style = PicoTheme.typography.titleMedium,
+            fontSize = 13.sp,
+            color = if (current == null) Color(0x99000000) else Color(0xFF000000),
+            modifier = Modifier.weight(1f),
+        )
+        Button(
+            onClick = { onChange(cycleOption(options, current, +1)) },
+            enabled = enabled && options.size > 1,
+            size = ButtonDefaults.Small,
+        ) {
+            Text(">")
+        }
+    }
+}
+
+/** Cycles through [options] (null = Default), wrapping around in both directions. */
+internal fun cycleOption(options: List<String?>, current: String?, delta: Int): String? {
+    if (options.isEmpty()) return null
+    val index = options.indexOf(current).let { if (it < 0) 0 else it }
+    return options[Math.floorMod(index + delta, options.size)]
+}

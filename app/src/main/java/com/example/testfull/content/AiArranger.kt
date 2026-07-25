@@ -32,6 +32,12 @@ internal data class CatalogModel(
     val bottomOffset: Float,
     /** Raw contents of the optional <name>.json sidecar (color/style/material), if present. */
     val details: String? = null,
+    /**
+     * Uniform scale bringing the model to its intended real-world size (from the sidecar's
+     * geometry vs. the measured bounds; 1 = the authored units are already correct). The AI's
+     * placement scale multiplies this.
+     */
+    val defaultScale: Float = 1f,
 )
 
 /** A door/window in navigation-root-local space, part of the AI room description. */
@@ -55,6 +61,15 @@ internal data class AiPlacement(
 internal data class AiLayout(
     val placements: List<AiPlacement>,
     val notes: String?,
+    /** Optional surface reskins requested by the AI: slot → texture display name. */
+    val textures: Map<SurfaceSlot, String> = emptyMap(),
+)
+
+/** An AI texture choice that resolved to a real texture from the library. */
+internal data class ResolvedAiTextures(
+    val resolved: Map<SurfaceSlot, TextureSpec>,
+    /** Human-readable reasons for ignored entries ("slot/name (reason)"). */
+    val skipped: List<String>,
 )
 
 /** An AI placement that passed validation: resolved model, clamped position, no overlaps. */
@@ -77,28 +92,74 @@ internal data class ResolvedAiLayout(
 /** Failure of the AI request itself (network, HTTP, malformed answer) with a readable message. */
 internal class AiArrangeException(message: String) : Exception(message)
 
-/** Measures every library model (and reads its sidecar details) — keeps the readable ones. */
-internal suspend fun buildCatalog(models: List<LibraryModel>): List<CatalogModel> =
-    models.mapNotNull { model ->
-        val bounds = measureModelBounds(model.file)
-        // Yield between models: each measurement does main-thread native work, and on the
-        // emulator several back-to-back can starve the app into an ANR.
-        delay(200)
+/**
+ * Measures every library model (and reads its sidecar details) — keeps the readable ones.
+ * Measurements go through a disk cache keyed by file mtime: loading the meshes natively is
+ * the heaviest thing this app does on the emulator, and the cache makes it a once-per-file
+ * cost. The cache is written incrementally so a crash mid-run keeps finished entries.
+ */
+internal suspend fun buildCatalog(models: List<LibraryModel>): List<CatalogModel> {
+    val directory = models.firstOrNull()?.file?.parentFile
+    val cache =
+        if (directory != null) {
+            withContext(Dispatchers.IO) { readBoundsCache(directory) }
+        } else {
+            mutableMapOf()
+        }
+
+    return models.mapNotNull { model ->
+        val key = model.file.absolutePath
+        val cached = cache[key]
+        val bounds =
+            if (cached != null && cached.mtimeMs == model.file.lastModified()) {
+                cached.toModelBounds()
+            } else {
+                val measured = measureModelBounds(model.file)
+                // Yield between native measurements: back-to-back heavy loads have killed
+                // the process on the emulator (memory/CPU pressure). The incremental cache
+                // below means a crashed run resumes where it stopped.
+                delay(1000)
+                if (measured != null && directory != null) {
+                    cache[key] =
+                        CachedBounds(
+                            measured.center,
+                            measured.halfExtents,
+                            measured.bottomOffset,
+                            model.file.lastModified(),
+                        )
+                    withContext(Dispatchers.IO) { writeBoundsCache(directory, cache) }
+                }
+                measured
+            }
         if (bounds == null) {
             Log.w(TAG, "buildCatalog: no bounds for ${model.displayName}, excluded")
             null
         } else {
-            val details = withContext(Dispatchers.IO) { readModelDetails(model.file) }
+            val raw = withContext(Dispatchers.IO) { readModelSidecarRaw(model.file) }
+            val defaultScale =
+                computeDefaultScale(
+                    Vector3(
+                        bounds.halfExtents.x * 2f,
+                        bounds.halfExtents.y * 2f,
+                        bounds.halfExtents.z * 2f,
+                    ),
+                    parseIntendedSize(raw),
+                )
+            if (defaultScale != 1f) {
+                Log.w(TAG, "buildCatalog: ${model.displayName} defaultScale=$defaultScale")
+            }
             CatalogModel(
                 file = model.file,
                 displayName = model.displayName,
                 center = bounds.center,
                 halfExtents = bounds.halfExtents,
                 bottomOffset = bounds.bottomOffset,
-                details = details,
+                details = raw?.let { distillModelDetails(it) },
+                defaultScale = defaultScale,
             )
         }
     }
+}
 
 /**
  * Builds the (system, user) message pair for the chat completion. The system message is the
@@ -114,6 +175,7 @@ internal fun buildArrangementMessages(
     openings: List<OpeningDesc>,
     catalog: List<CatalogModel>,
     currentPlacements: List<PlacedSummary>,
+    textureCatalog: List<TextureSpec> = emptyList(),
 ): Pair<String, String> {
     val system =
         buildString {
@@ -152,7 +214,8 @@ internal fun buildArrangementMessages(
             append("- Always explain your interpretation briefly in \"notes\".\n\n")
             append(
                 "OUTPUT SCHEMA (strict): {\"placements\": [{\"model\": string, \"x\": number, " +
-                    "\"z\": number, \"yaw\": number, \"scale\": number}], \"notes\": string}\n" +
+                    "\"z\": number, \"yaw\": number, \"scale\": number}], \"notes\": string, " +
+                    "optional \"textures\": {\"wall|floor|ceiling|door|window\": textureName}}\n" +
                     "Example answer for \"seat two people\": " +
                     "{\"placements\": [{\"model\": \"dining-chair\", \"x\": 1.0, \"z\": 0.0, " +
                     "\"yaw\": 270, \"scale\": 1}, {\"model\": \"dining-chair\", \"x\": -1.0, " +
@@ -246,16 +309,19 @@ internal fun buildArrangementMessages(
             "items in \"furniture\" are already there — include one in your layout to keep or " +
             "move it, omit it to remove it.\n\n"
     )
-    user.append("LIBRARY (complete — nothing else exists):\n")
+    user.append(
+        "LIBRARY (complete — nothing else exists; sizes are each model's recommended " +
+            "real-world size, and a placement's scale = 1 keeps that size):\n"
+    )
     catalog.forEach { model ->
         user.append(
             String.format(
                 Locale.US,
                 "- %s — footprint %.2f x %.2f m, %.2f m tall.",
                 model.displayName,
-                model.halfExtents.x * 2f,
-                model.halfExtents.z * 2f,
-                model.halfExtents.y * 2f,
+                model.halfExtents.x * 2f * model.defaultScale,
+                model.halfExtents.z * 2f * model.defaultScale,
+                model.halfExtents.y * 2f * model.defaultScale,
             )
         )
         if (model.details != null) {
@@ -264,6 +330,30 @@ internal fun buildArrangementMessages(
             user.append(" (no details file — infer category, color and style from the name)")
         }
         user.append("\n")
+    }
+    if (textureCatalog.isNotEmpty()) {
+        user.append("\nTEXTURES (you may reskin room surfaces; optional):\n")
+        textureCatalog.forEach { spec ->
+            user.append("- ").append(spec.displayName)
+            user.append(" — for surfaces: ")
+            user.append(
+                if (spec.surfaces.isEmpty()) {
+                    "any"
+                } else {
+                    spec.surfaces.joinToString("/") { it.key }
+                }
+            )
+            if (spec.styles.isNotEmpty()) {
+                user.append("; styles: ").append(spec.styles.joinToString(", "))
+            }
+            spec.details?.let { user.append(" DETAILS: ").append(it) }
+            user.append("\n")
+        }
+        user.append(
+            "To reskin a surface, add a \"textures\" object, e.g. {\"wall\": \"<name>\"} — " +
+                "only names from this list, and only on surfaces each texture supports. " +
+                "Omit the key entirely to leave surfaces unchanged.\n"
+        )
     }
     user.append("\nUSER REQUEST: \"").append(userPrompt.trim()).append("\"\n")
     user.append(
@@ -301,16 +391,59 @@ internal fun parseAiLayout(content: String): AiLayout {
         placements += AiPlacement(model, x.toFloat(), z.toFloat(), yaw, scale)
     }
     val notes = root.optString("notes", "").trim().ifEmpty { null }
-    return AiLayout(placements, notes)
+    val textures = mutableMapOf<SurfaceSlot, String>()
+    root.optJSONObject("textures")?.let { entries ->
+        entries.keys().forEach { key ->
+            val slot = SurfaceSlot.fromKey(key) ?: return@forEach
+            val name = entries.optString(key, "").trim()
+            if (name.isNotEmpty()) textures[slot] = name
+        }
+    }
+    return AiLayout(placements, notes, textures)
 }
 
-/** Finds a catalog model by name: exact (case-insensitive) first, then substring either way. */
+/**
+ * Resolves the AI's texture choices against the texture library (case-insensitive, exact then
+ * substring) and enforces each texture's declared surfaces. Unknown or mismatched entries are
+ * skipped with reasons rather than failing the whole layout.
+ */
+internal fun resolveAiTextures(
+    textures: Map<SurfaceSlot, String>,
+    catalog: List<TextureSpec>,
+): ResolvedAiTextures {
+    val resolved = mutableMapOf<SurfaceSlot, TextureSpec>()
+    val skipped = mutableListOf<String>()
+    textures.forEach { (slot, name) ->
+        val query = normalizedName(name)
+        val spec =
+            catalog.firstOrNull { normalizedName(it.displayName) == query }
+                ?: catalog.firstOrNull {
+                    val candidate = normalizedName(it.displayName)
+                    candidate.contains(query) || query.contains(candidate)
+                }
+        when {
+            spec == null -> skipped += "${slot.key}/\"$name\" (unknown texture)"
+            spec.surfaces.isNotEmpty() && slot !in spec.surfaces ->
+                skipped +=
+                    "${slot.key}/\"$name\" (meant for " +
+                        spec.surfaces.joinToString("/") { it.key } + ")"
+            else -> resolved[slot] = spec
+        }
+    }
+    return ResolvedAiTextures(resolved, skipped)
+}
+
+/** Name matching that ignores case, spaces, hyphens and underscores ("Red Brick"≈"red-brick"). */
+private fun normalizedName(value: String): String =
+    value.lowercase(Locale.US).replace(Regex("[-_\\s]+"), "")
+
+/** Finds a catalog model by name: exact (normalized) first, then substring either way. */
 internal fun resolveCatalogModel(name: String, catalog: List<CatalogModel>): CatalogModel? {
-    val query = name.trim().lowercase(Locale.US)
+    val query = normalizedName(name)
     if (query.isEmpty()) return null
-    return catalog.firstOrNull { it.displayName.lowercase(Locale.US) == query }
+    return catalog.firstOrNull { normalizedName(it.displayName) == query }
         ?: catalog.firstOrNull {
-            val candidate = it.displayName.lowercase(Locale.US)
+            val candidate = normalizedName(it.displayName)
             candidate.contains(query) || query.contains(candidate)
         }
 }
@@ -396,18 +529,21 @@ internal fun resolveAiPlacements(
             skipped += "\"${placement.modelName}\" (not in the model library)"
             return@forEach
         }
+        // The AI's scale multiplies the model's recommended size; everything below uses the
+        // effective (final) scale so clamps, pivots and overlap tests match what will spawn.
+        val effectiveScale = placement.scale * model.defaultScale
         val halfDiagonal =
             hypot(model.halfExtents.x.toDouble(), model.halfExtents.z.toDouble()).toFloat() *
-                placement.scale
+                effectiveScale
         val margin = baseMargin + halfDiagonal
         val clamped = clampToFootprint(walls, PlanPoint(placement.x, placement.z), margin)
-        val pivotY = model.bottomOffset * placement.scale
+        val pivotY = model.bottomOffset * effectiveScale
         val separated =
             separateFromBoxes(
                 point = clamped,
                 pivotY = pivotY,
                 yawDegrees = placement.yawDegrees,
-                scale = placement.scale,
+                scale = effectiveScale,
                 center = model.center,
                 halfExtents = model.halfExtents,
                 others = acceptedBoxes,
@@ -427,13 +563,13 @@ internal fun resolveAiPlacements(
                 x = separated.x,
                 z = separated.z,
                 yawDegrees = placement.yawDegrees,
-                scale = placement.scale,
+                scale = effectiveScale,
             )
         acceptedBoxes +=
             yawBoxFor(
                 Vector3(separated.x, pivotY, separated.z),
                 placement.yawDegrees,
-                placement.scale,
+                effectiveScale,
                 model.center,
                 model.halfExtents,
             )
@@ -448,8 +584,17 @@ internal suspend fun requestAiLayout(
     openings: List<OpeningDesc>,
     catalog: List<CatalogModel>,
     currentPlacements: List<PlacedSummary>,
+    textureCatalog: List<TextureSpec> = emptyList(),
 ): AiLayout {
-    val (system, user) = buildArrangementMessages(userPrompt, walls, openings, catalog, currentPlacements)
+    val (system, user) =
+        buildArrangementMessages(
+            userPrompt,
+            walls,
+            openings,
+            catalog,
+            currentPlacements,
+            textureCatalog,
+        )
     Log.w(TAG, "request: system=${system.length} chars, user=${user.length} chars")
     Log.w(TAG, "request user message: ${user.take(1200)}")
     val content = postChatCompletion(system, user)

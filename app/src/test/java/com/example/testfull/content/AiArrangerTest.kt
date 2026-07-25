@@ -12,7 +12,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AiArrangerTest {
-    private val walls = demoFloorPlan().normalized().walls
+    /** Simple 15×8 rectangle for placement tests (independent of the demo plan). */
+    private val walls =
+        listOf(
+            PlanWall(1, PlanPoint(-7.5f, -4f), PlanPoint(7.5f, -4f)),
+            PlanWall(2, PlanPoint(7.5f, -4f), PlanPoint(7.5f, 4f)),
+            PlanWall(3, PlanPoint(7.5f, 4f), PlanPoint(-7.5f, 4f)),
+            PlanWall(4, PlanPoint(-7.5f, 4f), PlanPoint(-7.5f, -4f)),
+        )
 
     /** Half wall thickness + clearance, matching HomeStage.localFootprint for the demo plan. */
     private val baseMargin = 0.16f / 2f + 0.05f
@@ -180,6 +187,98 @@ class AiArrangerTest {
         assertTrue(resolved.skipped.single().contains("no free space"))
     }
 
+    @Test
+    fun parseAiLayoutReadsTextureChoices() {
+        val content =
+            """
+            {"placements":[{"model":"dining-chair","x":1,"z":2}],
+             "textures":{"wall":"Red Brick Wall","window":"white-frame-window","ceiling":" "}}
+            """.trimIndent()
+
+        val layout = parseAiLayout(content)
+
+        assertEquals("Red Brick Wall", layout.textures[SurfaceSlot.WALL])
+        assertEquals("white-frame-window", layout.textures[SurfaceSlot.WINDOW])
+        // Blank values are ignored.
+        assertFalse(layout.textures.containsKey(SurfaceSlot.CEILING))
+    }
+
+    @Test
+    fun resolveAiTexturesEnforcesNamesAndSurfaces() {
+        val textures =
+            listOf(
+                TextureSpec(
+                    file = File("red-brick-wall.jpg"),
+                    displayName = "red-brick-wall",
+                    surfaces = listOf(SurfaceSlot.WALL),
+                    styles = listOf("industrial"),
+                    roughness = 0.95f,
+                    metallic = 0f,
+                    normalMap = null,
+                    details = null,
+                ),
+                TextureSpec(
+                    file = File("oak-wood-floor.jpg"),
+                    displayName = "oak-wood-floor",
+                    surfaces = listOf(SurfaceSlot.FLOOR),
+                    styles = emptyList(),
+                    roughness = null,
+                    metallic = null,
+                    normalMap = null,
+                    details = null,
+                ),
+            )
+
+        val resolved =
+            resolveAiTextures(
+                mapOf(
+                    SurfaceSlot.WALL to "Red Brick Wall", // case-insensitive exact
+                    SurfaceSlot.FLOOR to "red-brick-wall", // wall-only texture on the floor
+                    SurfaceSlot.DOOR to "ghost", // unknown
+                ),
+                textures,
+            )
+
+        assertEquals(1, resolved.resolved.size)
+        assertEquals("red-brick-wall", resolved.resolved[SurfaceSlot.WALL]?.displayName)
+        assertEquals(2, resolved.skipped.size)
+        assertTrue(resolved.skipped.any { it.contains("meant for wall") })
+        assertTrue(resolved.skipped.any { it.contains("unknown texture") })
+    }
+
+    @Test
+    fun resolveAiPlacementsAppliesDefaultScaleToClearance() {
+        val bigChair = chair.copy(defaultScale = 2f)
+        val layout = AiLayout(listOf(AiPlacement("dining-chair", x = 100f, z = 0f, 0f, 1f)), null)
+
+        val placed =
+            resolveAiPlacements(layout, listOf(bigChair), walls, baseMargin).accepted.single()
+
+        // The wall clearance uses the effective scale (AI scale × defaultScale), and the
+        // accepted placement carries the effective scale for spawning.
+        val halfDiagonal = hypot(0.25, 0.25).toFloat() * 2f
+        assertTrue(
+            distanceToWalls(walls, PlanPoint(placed.x, placed.z)) >=
+                baseMargin + halfDiagonal - 0.01f,
+        )
+        assertEquals(2f, placed.scale, 0.0001f)
+    }
+
+    @Test
+    fun librarySizesIncludeDefaultScale() {
+        val scaledSofa = sofa.copy(defaultScale = 2f)
+        val (_, user) =
+            buildArrangementMessages(
+                "anything",
+                walls,
+                emptyList(),
+                listOf(scaledSofa),
+                emptyList(),
+                emptyList(),
+            )
+        assertTrue(user.contains("4.00 x 1.80"))
+    }
+
     private fun boxOf(placement: ResolvedAiPlacement): YawBox =
         yawBoxFor(
             Vector3(
@@ -207,6 +306,19 @@ class AiArrangerTest {
                 openings = openings,
                 catalog = catalog,
                 currentPlacements = listOf(PlacedSummary("mid-century-sofa", 1f, -2f, 90f)),
+                textureCatalog =
+                    listOf(
+                        TextureSpec(
+                            file = File("red-brick-wall.jpg"),
+                            displayName = "red-brick-wall",
+                            surfaces = listOf(SurfaceSlot.WALL),
+                            styles = listOf("industrial"),
+                            roughness = 0.95f,
+                            metallic = 0f,
+                            normalMap = null,
+                            details = null,
+                        )
+                    ),
             )
 
         // The preprompt teaches vocabulary, semantics, style rules and the details schema.
@@ -236,6 +348,9 @@ class AiArrangerTest {
         assertTrue(user.contains("DETAILS: {\"color\":\"oak\",\"style\":\"modern\"}"))
         assertTrue(user.contains("(no details file"))
         assertTrue(user.contains("cozy living room"))
+        // The texture catalog is offered with its supported surfaces and styles.
+        assertTrue(user.contains("TEXTURES"))
+        assertTrue(user.contains("red-brick-wall — for surfaces: wall; styles: industrial"))
         assertNotNull(user)
     }
 }
