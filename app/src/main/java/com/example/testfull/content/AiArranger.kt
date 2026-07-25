@@ -103,6 +103,78 @@ internal data class ResolvedAiLayout(
 internal class AiArrangeException(message: String) : Exception(message)
 
 /**
+ * Distills the AdventureX fengshui/国学 JSON config into a concise pre-prompt compatible with
+ * the app's output schema. The raw config defines its own (conflicting) system_prompt,
+ * input_schema and output_schema (~1300 lines) that confuse the AI into returning an analysis
+ * object instead of the {placements, notes, textures} JSON the app expects. This function
+ * extracts only the cultural design rules and core concepts, and wraps them with an explicit
+ * instruction to keep the app's output schema unchanged.
+ */
+internal fun distillFengshuiPrompt(rawJson: String): String {
+    return runCatching {
+        val root = JSONObject(rawJson)
+        val sb = StringBuilder()
+        sb.append("FENGSHUI / CULTURAL DESIGN GUIDELINES (apply when choosing placements; ")
+        sb.append("do NOT change the output schema — still return {placements, notes, textures} only):\n\n")
+
+        // Core concepts from the FORM_SCHOOL_GENERAL source.
+        sb.append("Core concepts:\n")
+        val sources = root.optJSONArray("reference_sources")
+        if (sources != null) {
+            for (i in 0 until sources.length()) {
+                val src = sources.optJSONObject(i)
+                if (src?.optString("source_id") == "FORM_SCHOOL_GENERAL") {
+                    val concepts = src.optJSONArray("core_concepts")
+                    if (concepts != null) {
+                        for (c in 0 until concepts.length()) {
+                            val concept = concepts.optJSONObject(c)
+                            val name = concept?.optString("concept", "") ?: ""
+                            val interp = concept?.optString("project_interpretation", "") ?: ""
+                            if (name.isNotEmpty()) {
+                                sb.append("- $name: $interp\n")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        sb.append("\n")
+
+        // Key rules — extract id, name, when it applies, and the recommended actions.
+        sb.append("Placement rules (respect when feasible; safety and function take priority):\n")
+        val rules = root.optJSONArray("rule_library")
+        if (rules != null) {
+            for (i in 0 until rules.length()) {
+                val rule = rules.optJSONObject(i) ?: continue
+                val id = rule.optString("rule_id", "")
+                val name = rule.optString("name", "")
+                val applies = rule.optString("applies_when", "")
+                val actions = rule.optJSONArray("recommended_actions")
+                val actionStr = if (actions != null && actions.length() > 0) {
+                    (0 until actions.length()).joinToString("; ") { actions.opt(it).toString() }
+                } else ""
+                sb.append("- [$id] $name: when $applies")
+                if (actionStr.isNotEmpty()) sb.append(" → $actionStr")
+                sb.append("\n")
+            }
+        }
+        sb.append("\n")
+
+        // Conflict resolution priority — makes clear fengshui is below safety/function.
+        sb.append("Priority order (highest first): safety & building codes; structure/fireplumbing; ")
+        sb.append("function/access/light/ventilation; user's explicit request; fengshui preferences; ")
+        sb.append("style/aesthetics. Fengshui must NEVER override safety, function or the user's request.\n")
+        sb.toString()
+    }.getOrElse {
+        // If JSON parsing fails, return a minimal hardcoded summary so the feature still works.
+        "FENGSHUI GUIDELINES: sofa/seat should have solid backing (有靠); bed headboard against " +
+            "solid wall not window; bed not directly facing door; keep entrance buffered; don't " +
+            "block windows with tall furniture; keep walkways >= 0.9m. Still output " +
+            "{placements, notes, textures} only."
+    }
+}
+
+/**
  * Measures every library model (and reads its sidecar details) — keeps the readable ones.
  * Measurements go through a disk cache keyed by file mtime: loading the meshes natively is
  * the heaviest thing this app does on the emulator, and the cache makes it a once-per-file
@@ -193,6 +265,7 @@ internal fun buildArrangementMessages(
     iteration: Int = 0,
     maxIterations: Int = 3,
     previousNotes: String? = null,
+    rooms: List<DetectedRoom> = emptyList(),
 ): Pair<String, String> {
     val system =
         buildString {
@@ -232,32 +305,31 @@ internal fun buildArrangementMessages(
                         "prose, no markdown fences.\n\n"
                 )
             }
-            append("SPATIAL VOCABULARY — use exactly these meanings:\n")
-            append("- \"next to / beside\": close but never touching — a 0.05 to 0.3 m gap between bounding boxes. Overlap is never allowed.\n")
-            append("- \"against / along the wall\": the item's back within 0.1 m of the wall line, parallel to that wall.\n")
-            append("- \"around X\": copies distributed evenly on the sides of X (e.g. 4 chairs: one per side), each one FACING X's center — set yaw so its front points at X.\n")
-            append("- \"facing X\": yaw such that the model's front (local +Z) points at X.\n")
-            append("- \"opposite X\": across the room or across X, facing X.\n")
-            append("- \"corner\": touching both walls of a corner, usually diagonal (yaw 45/135/225/315).\n")
-            append("- Clearances: walkways >= 0.6 m wide; keep >= 1.0 m free in front of doors; passage gaps between furniture >= 0.5 m.\n\n")
+            append("SPATIAL VOCABULARY (exact meanings):\n")
+            append("- \"next to/beside\": 0.05–0.3 m gap between boxes; never overlap.\n")
+            append("- \"against/along the wall\": back within 0.1 m of the wall line, parallel to it.\n")
+            append("- \"around X\": copies on each side of X, each FACING X's center (yaw toward X).\n")
+            append("- \"facing X\"/\"opposite X\": yaw so the model's front (+Z) points at X.\n")
+            append("- \"corner\": touching both walls, diagonal (yaw 45/135/225/315).\n")
+            append("- Clearances: walkways >= 0.6 m; >= 1.0 m free in front of doors; >= 0.5 m between furniture.\n\n")
             append("ROOM SEMANTICS:\n")
-            append("- A closed wall loop is one room. If the plan has several closed loops or strong partitions, treat each zone as its own room.\n")
-            append("- Typical functions: bedroom (bed, nightstands, wardrobe), bathroom (toilet, sink, tub/shower), living room (sofa/couch, coffee table, chairs, screen), dining area (table with chairs AROUND it), office (desk with a chair facing it).\n")
-            append("- Infer each zone's function from the user's request and keep fixtures of one function grouped together.\n\n")
+            append("- A room does NOT need to be fully closed — an open passage (a gap in a divider, even 2-3 m wide) still splits the plan into two rooms; the gap is just a doorless doorway.\n")
+            append("- Typical functions: bedroom (bed, nightstands, wardrobe), bathroom (toilet, sink, tub), living room (sofa, coffee table, chairs, screen), dining (table with chairs AROUND it), office (desk + chair facing it). Infer each zone's function from the user's request.\n\n")
+            append("MULTI-ROOM PLANS (read carefully):\n")
+            append("- The USER message has a \"rooms\" array when the plan is segmented. Each entry: id, bounds (X/Z extent), centroid (center), areaSqm, walls (bounding wall ids — cross-ref with the \"walls\"/\"openings\" arrays to find each room's doors/windows).\n")
+            append("- When \"rooms\" has 2+ entries, DO NOT use the global bounds/centroid as the placement target — that centroid sits on the divider wall. For each piece: pick the room whose function matches (room with the main entrance + big window = living room; smaller quieter room = bedroom), anchor at THAT room's centroid, and keep coords inside its bounds with >= 0.3 m wall clearance. Keep furniture out of the open passage between rooms.\n")
+            append("- Distribute pieces across the relevant rooms when the request spans functions; never pile everything in one zone. When \"rooms\" has 0–1 entries, place using the global bounds/centroid as before.\n\n")
             append("FURNITURE DATA:\n")
-            append("- The LIBRARY list in the user message is COMPLETE — you may only use models named there. Sizes there are measured by the app and always accurate.\n")
-            append("- A model may include a DETAILS record (asset schema_version 1). Its meaningful fields:\n")
-            append("  · identity.name — display name, may be localized (e.g. Chinese); use it when naming the piece in \"notes\".\n")
-            append("  · classification.category and classification.room_types — what it is and which room types it belongs to (living_room, dining_room, bedroom, bathroom, office...). Respect them when the plan has zones.\n")
-            append("  · appearance.colors / appearance.materials — for matching color or material requests.\n")
-            append("  · placement — support_surface, against_wall, front_clearance_m / side_clearance_m: respect these when present.\n")
-            append("  · style_assessment.scores — 0..1 per style (e.g. style.nordic, style.wabi_sabi, style.ikea_functional, style.chinese and its variants, style.industrial); higher = stronger match. For style requests, prefer models with high scores in the requested style and say why in \"notes\".\n")
-            append("- Fields that are null or absent are UNKNOWN — ignore them; never invent values. If a model has no DETAILS at all, infer its likely category, color and style from its name and dimensions.\n")
-            append("- You may use the same model name in several placements when the request implies multiples (\"4 chairs\" = 4 entries).\n\n")
-            append("STYLE REQUESTS (e.g. \"modern\", \"cozy\"):\n")
-            append("- modern: pieces parallel to walls, aligned axes, symmetry, generous negative space.\n")
-            append("- cozy: tighter groupings angled toward a focal point, never below minimum clearances.\n")
-            append("- Always explain your interpretation briefly in \"notes\".\n\n")
+            append("- The LIBRARY list is COMPLETE — only use models named there; sizes are app-measured and accurate. Same model may appear in several placements (\"4 chairs\" = 4 entries).\n")
+            append("- A model may include DETAILS (asset schema_version 1). Meaningful fields: identity.name (display name, may be localized); classification.category + room_types (respect room_types when the plan has zones); appearance.colors/materials; placement (support_surface, against_wall, clearances); style_assessment.scores (0..1 per style — nordic, wabi_sabi, ikea_functional, chinese variants, industrial; prefer high scores for style requests).\n")
+            append("- Null/absent fields are UNKNOWN — never invent them. No DETAILS → infer category/color/style from name and dimensions.\n\n")
+            append("STYLE REQUESTS (\"modern\", \"cozy\", …): modern = parallel to walls, aligned axes, symmetry, negative space; cozy = tighter groupings angled toward a focal point. Explain your interpretation in \"notes\".\n\n")
+            append("COMPLETENESS — be generous, not timid:\n")
+            append("- FULLY FURNISH the room for its function. A mostly-empty room is a failed layout. Aim for 8–14 pieces in a living room (sofa + chairs + coffee table + side tables + TV stand + rug + lamp + plant), 5–8 in a bedroom (bed + 2 nightstands + wardrobe + dresser + desk or chair), 4–6 in a dining area (table + 4–6 chairs + sideboard).\n")
+            append("- Use MULTIPLES of the same model when the request implies it: \"4 chairs around the table\" = 4 separate entries; \"pair of nightstands\" = 2 entries. Do not stop at one when the room calls for a set.\n")
+            append("- Add accent pieces even when not explicitly requested: a rug anchors a seating group, a lamp fills a dark corner, a plant softens an empty wall, side tables flank a sofa. These make the room feel finished.\n")
+            append("- Place furniture FIRST, then verify clearances. If a piece slightly violates a clearance, nudge it rather than dropping it — dropping items leaves the room bare. The app's resolver will clamp positions to the footprint and resolve overlaps.\n")
+            append("- NEVER return fewer than 5 placements unless the room is truly tiny (< 8 m²) or the user explicitly asked for a single item. When in doubt, add more.\n\n")
             if (planMode) {
                 append(
                     "OUTPUT SCHEMA (strict, PLAN MODE): {\"placements\": [], \"notes\": string, " +
@@ -372,6 +444,33 @@ internal fun buildArrangementMessages(
         user.append("],"
         )
     }
+    // Per-room segmentation: when the plan has multiple zones, give the AI each room's
+    // bounds, centroid, area and bounding walls so it can place furniture in the correct
+    // zone instead of clustering everything at the global center (which often sits on the
+    // divider wall between zones). The AI can cross-reference each room's wall ids with
+    // the "walls" and "openings" arrays above to see where the room's doors/windows are.
+    if (rooms.isNotEmpty()) {
+        user.append("\"rooms\":[")
+        rooms.forEachIndexed { index, room ->
+            if (index > 0) user.append(",")
+            user.append(
+                String.format(
+                    Locale.US,
+                    "{\"id\":%d,\"bounds\":{\"x\":[%.2f,%.2f],\"z\":[%.2f,%.2f]},\"centroid\":[%.2f,%.2f],\"areaSqm\":%.1f,\"walls\":[%s]}",
+                    room.id,
+                    room.bounds.minX,
+                    room.bounds.maxX,
+                    room.bounds.minZ,
+                    room.bounds.maxZ,
+                    room.centroid.x,
+                    room.centroid.z,
+                    room.areaSqm,
+                    room.boundingWallIds.joinToString(","),
+                )
+            )
+        }
+        user.append("],")
+    }
     user.append("\"furniture\":[")
     currentPlacements.forEachIndexed { index, placed ->
         if (index > 0) user.append(",")
@@ -456,10 +555,13 @@ internal fun buildArrangementMessages(
     }
     user.append("\nUSER REQUEST: \"").append(userPrompt.trim()).append("\"\n")
     user.append(
-        "Rules: only LIBRARY models; everything stands on the floor (no stacking); " +
-            "respect the vocabulary gaps — placements must never overlap; keep doors and " +
-            "walkways clear. Respond with the placements JSON only."
+        "Rules: only LIBRARY models; on the floor (no stacking); never overlap; keep doors/walkways clear. Respond with the placements JSON only."
     )
+    if (rooms.size >= 2) {
+        user.append(
+            "\nMULTI-ROOM: ${rooms.size} rooms detected. Pick the room per piece by function, anchor at THAT room's centroid (not the global center, which sits on the divider), keep inside the room's bounds, and keep out of the open passage."
+        )
+    }
     if (iterate && iteration > 0) {
         user.append("\n\n=== ITERATION CONTEXT ===\n")
         user.append("This is iteration $iteration of $maxIterations in the self-improvement loop.\n")
@@ -488,28 +590,55 @@ internal fun buildArrangementMessages(
 /**
  * Parses the AI's answer. Entries without a model name or numeric x/z are skipped; yaw defaults
  * to 0 and scale to 1 (clamped to [MIN_AI_SCALE]..[MAX_AI_SCALE]). Throws [AiArrangeException]
- * when the content is not a JSON object with a `placements` array.
+ * when the content is not valid JSON. When the JSON is valid but has no recognizable placements
+ * array, returns an empty layout with whatever notes the AI provided (so the user sees the AI's
+ * explanation instead of an opaque error).
  */
 internal fun parseAiLayout(content: String): AiLayout {
-    val root =
-        runCatching { JSONObject(content) }.getOrElse {
-            throw AiArrangeException("AI did not return valid JSON")
+    Log.w(TAG, "parseAiLayout: raw response (first 800 chars): ${content.take(800)}")
+    // Strip markdown fences if the AI wrapped its JSON in ```json ... ```.
+    val cleaned = content.trim().let { s ->
+        if (s.startsWith("```")) {
+            s.removePrefix("```json").removePrefix("```")
+                .removeSuffix("```")
+                .trim()
+        } else {
+            s
         }
+    }
+    val root =
+        runCatching { JSONObject(cleaned) }.getOrElse {
+            throw AiArrangeException("AI did not return valid JSON: ${content.take(200)}")
+        }
+    // Try the standard key, then common alternatives the AI might use.
     val array =
         root.optJSONArray("placements")
-            ?: throw AiArrangeException("AI response has no placements array")
+            ?: root.optJSONArray("placement")
+            ?: root.optJSONArray("items")
+            ?: root.optJSONArray("furniture")
+            ?: root.optJSONArray("layout")
     val placements = mutableListOf<AiPlacement>()
-    for (index in 0 until array.length()) {
-        val entry = array.optJSONObject(index) ?: continue
-        val model = entry.optString("model", "").trim()
-        if (model.isEmpty()) continue
-        val x = entry.optDouble("x", Double.NaN)
-        val z = entry.optDouble("z", Double.NaN)
-        if (x.isNaN() || z.isNaN()) continue
-        val yaw = entry.optDouble("yaw", 0.0).toFloat()
-        val scale =
-            entry.optDouble("scale", 1.0).toFloat().coerceIn(MIN_AI_SCALE, MAX_AI_SCALE)
-        placements += AiPlacement(model, x.toFloat(), z.toFloat(), yaw, scale)
+    if (array != null) {
+        for (index in 0 until array.length()) {
+            val entry = array.optJSONObject(index) ?: continue
+            val model = entry.optString("model", "").trim()
+            if (model.isEmpty()) continue
+            // Accept both {"x":1,"z":2} and {"position":[x,y,z]} formats.
+            var x = entry.optDouble("x", Double.NaN)
+            var z = entry.optDouble("z", Double.NaN)
+            if (x.isNaN() || z.isNaN()) {
+                val pos = entry.optJSONArray("position")
+                if (pos != null && pos.length() >= 3) {
+                    x = pos.optDouble(0, Double.NaN)
+                    z = pos.optDouble(2, Double.NaN)
+                }
+            }
+            if (x.isNaN() || z.isNaN()) continue
+            val yaw = entry.optDouble("yaw", 0.0).toFloat()
+            val scale =
+                entry.optDouble("scale", 1.0).toFloat().coerceIn(MIN_AI_SCALE, MAX_AI_SCALE)
+            placements += AiPlacement(model, x.toFloat(), z.toFloat(), yaw, scale)
+        }
     }
     val notes = root.optString("notes", "").trim().ifEmpty { null }
     val textures = mutableMapOf<SurfaceSlot, String>()
@@ -528,6 +657,9 @@ internal fun parseAiLayout(content: String): AiLayout {
         }
     }
     val satisfied = root.optBoolean("satisfied", false)
+    if (placements.isEmpty() && notes == null && suggestions.isEmpty()) {
+        throw AiArrangeException("AI response had no placements, notes, or suggestions: ${content.take(300)}")
+    }
     return AiLayout(placements, notes, textures, suggestions, satisfied)
 }
 
@@ -599,6 +731,7 @@ internal fun separateFromBoxes(
     others: List<YawBox>,
     walls: List<PlanWall>,
     margin: Float,
+    rooms: List<DetectedRoom> = emptyList(),
 ): PlanPoint? {
     var current = point
     val maxIterations = (SEPARATION_MAX_TRAVEL_METERS / SEPARATION_STEP_METERS).toInt()
@@ -628,7 +761,7 @@ internal fun separateFromBoxes(
                 current.x + dirX * SEPARATION_STEP_METERS,
                 current.z + dirZ * SEPARATION_STEP_METERS,
             )
-        current = clampToFootprint(walls, stepped, margin)
+        current = clampToFootprint(walls, stepped, margin, rooms)
     }
     return null
 }
@@ -646,6 +779,7 @@ internal fun resolveAiPlacements(
     catalog: List<CatalogModel>,
     walls: List<PlanWall>,
     baseMargin: Float,
+    rooms: List<DetectedRoom> = emptyList(),
 ): ResolvedAiLayout {
     val accepted = mutableListOf<ResolvedAiPlacement>()
     val acceptedBoxes = mutableListOf<YawBox>()
@@ -665,7 +799,10 @@ internal fun resolveAiPlacements(
             hypot(model.halfExtents.x.toDouble(), model.halfExtents.z.toDouble()).toFloat() *
                 effectiveScale
         val margin = baseMargin + halfDiagonal
-        val clamped = clampToFootprint(walls, PlanPoint(placement.x, placement.z), margin)
+        // Room-aware clamp: when the plan has multiple zones, pull the point toward the
+        // nearest room's centroid (not the global centroid) so furniture stays in the zone
+        // the AI intended instead of being dragged through a divider wall.
+        val clamped = clampToFootprint(walls, PlanPoint(placement.x, placement.z), margin, rooms)
         val pivotY = model.bottomOffset * effectiveScale
         val separated =
             separateFromBoxes(
@@ -678,6 +815,7 @@ internal fun resolveAiPlacements(
                 others = acceptedBoxes,
                 walls = walls,
                 margin = margin,
+                rooms = rooms,
             )
         if (separated == null) {
             skipped += "\"${model.displayName}\" (no free space left)"
@@ -721,6 +859,8 @@ internal suspend fun requestAiLayout(
     iteration: Int = 0,
     maxIterations: Int = 3,
     previousNotes: String? = null,
+    rooms: List<DetectedRoom> = emptyList(),
+    aiModel: String = "",
 ): AiLayout {
     val (system, user) =
         buildArrangementMessages(
@@ -737,10 +877,16 @@ internal suspend fun requestAiLayout(
             iteration,
             maxIterations,
             previousNotes,
+            rooms,
         )
     Log.w(TAG, "request: system=${system.length} chars, user=${user.length} chars")
     Log.w(TAG, "request user message: ${user.take(1200)}")
-    val content = postChatCompletion(system, user)
+    if (rooms.isNotEmpty()) {
+        Log.w(TAG, "multi-room plan: ${rooms.size} rooms detected, included in prompt")
+    }
+    val effectiveModel = aiModel.ifBlank { BuildConfig.AI_API_MODEL }
+    Log.w(TAG, "request model: $effectiveModel")
+    val content = postChatCompletion(system, user, effectiveModel)
     return parseAiLayout(content)
 }
 
@@ -755,11 +901,11 @@ private fun wallBounds(walls: List<PlanWall>): PlanBounds {
     )
 }
 
-private suspend fun postChatCompletion(system: String, user: String): String {
+private suspend fun postChatCompletion(system: String, user: String, model: String): String {
     var lastTimeout: java.net.SocketTimeoutException? = null
     repeat(MAX_HTTP_ATTEMPTS) { attempt ->
         try {
-            return postChatCompletionOnce(system, user)
+            return postChatCompletionOnce(system, user, model)
         } catch (error: java.net.SocketTimeoutException) {
             lastTimeout = error
             Log.w(TAG, "request timed out (attempt ${attempt + 1}/$MAX_HTTP_ATTEMPTS)")
@@ -768,7 +914,7 @@ private suspend fun postChatCompletion(system: String, user: String): String {
     throw AiArrangeException("AI service timed out twice — the relay is congested, try again")
 }
 
-private suspend fun postChatCompletionOnce(system: String, user: String): String =
+private suspend fun postChatCompletionOnce(system: String, user: String, model: String): String =
     withContext(Dispatchers.IO) {
         val key = BuildConfig.AI_API_KEY
         if (key.isBlank()) {
@@ -777,7 +923,7 @@ private suspend fun postChatCompletionOnce(system: String, user: String): String
         val base = BuildConfig.AI_API_BASE.trim().trimEnd('/')
         val payload =
             JSONObject()
-                .put("model", BuildConfig.AI_API_MODEL)
+                .put("model", model)
                 // No "temperature": some upstreams (e.g. gpt-5 reasoning) 400 on any
                 // non-default value, and JSON mode carries the determinism we need.
                 .put("response_format", JSONObject().put("type", "json_object"))

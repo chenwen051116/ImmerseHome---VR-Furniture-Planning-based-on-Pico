@@ -275,6 +275,10 @@ fun HomeStage() {
     var aiPrompt by remember { mutableStateOf("") }
     var aiBusy by remember { mutableStateOf(false) }
     var aiStatus by remember { mutableStateOf("") }
+    // Selected AI model — defaults to the BuildConfig value (local.properties ai.api.model)
+    // but can be switched at runtime from the Arrange panel. Lets the user fall back to
+    // gpt-4o when the flagship 524s on the relay's Cloudflare edge.
+    var aiModel by remember { mutableStateOf(BuildConfig.AI_API_MODEL) }
 
     // --- Surface texture state ---
     var availableTextures by remember { mutableStateOf<List<TextureSpec>>(emptyList()) }
@@ -292,7 +296,7 @@ fun HomeStage() {
         if (aiBusy) return@runAiArrange
         scope.launch {
             aiBusy = true
-            aiStatus = "Asking AI…"
+            aiStatus = "Asking AI ($aiModel)…"
             try {
                 // Scan/measure on demand so the button works even when the user never pressed
                 // "Scan models folder".
@@ -314,15 +318,29 @@ fun HomeStage() {
                 }
                 val (footprintWalls, footprintMargin) = localFootprint(appliedPlan)
                 val openings = localOpenings(appliedPlan)
+                // Segment the floor plan into separate rooms (zones) so the AI can place
+                // furniture per-room instead of clustering at the global center — critical
+                // for divided plans like the demo (living room + bedroom with an open
+                // passage). Computed in the same navigation-root-local coords as
+                // footprintWalls, so room bounds/centroids line up with the AI's coordinate
+                // system. Empty for single-room or open plans (the AI falls back to global).
+                val detectedRooms = detectRooms(FloorPlan(walls = footprintWalls))
                 // Load the AdventureX fengshui/国学 config from assets when Advanced
                 // Thinking is on, so it can be prepended to the system prompt.
                 val prePrompt =
                     if (advancedThinking) {
                         runCatching {
-                            context.assets
+                            val raw = context.assets
                                 .open("adventurex_fengshui_ai_config_v1.json")
                                 .bufferedReader()
                                 .use { it.readText() }
+                            // Distill the 1300-line fengshui JSON into a concise, schema-
+                            // compatible prompt. The raw config has its own conflicting
+                            // output_schema (scores/issues/recommendations) that confuses
+                            // the AI into returning an analysis instead of placements —
+                            // distilling keeps the cultural rules but explicitly tells the
+                            // AI to still output {placements, notes, textures}.
+                            distillFengshuiPrompt(raw)
                         }.getOrElse {
                             Log.w(TAG, "could not load advanced pre-prompt: ${it.message}")
                             null
@@ -343,6 +361,7 @@ fun HomeStage() {
                             catalog = modelCatalog,
                             walls = footprintWalls,
                             baseMargin = footprintMargin,
+                            rooms = detectedRooms,
                         )
                     // Apply = replace: the AI's layout is the full desired state, which also
                     // covers "move the existing furniture". Free the ghost too: a large one
@@ -434,6 +453,8 @@ fun HomeStage() {
                         iterate = iterateMode && !planMode,
                         iteration = 0,
                         maxIterations = ITERATE_MAX_ITERATIONS,
+                        rooms = detectedRooms,
+                        aiModel = aiModel,
                     )
                 // Plan Mode: the AI returned analysis/suggestions only (no placements).
                 // Surface them in the status and skip the spawn/texture steps entirely.
@@ -486,6 +507,8 @@ fun HomeStage() {
                                 iteration = iter,
                                 maxIterations = ITERATE_MAX_ITERATIONS,
                                 previousNotes = lastNotes,
+                                rooms = detectedRooms,
+                                aiModel = aiModel,
                             )
                         if (iterLayout.satisfied) {
                             aiStatus =
@@ -1187,11 +1210,27 @@ fun HomeStage() {
                             advancedThinking = advancedThinking,
                             planMode = planMode,
                             iterateMode = iterateMode,
+                            aiModel = aiModel,
                             onAdvancedThinkingChange = { advancedThinking = it },
                             onPlanModeChange = { planMode = it },
                             onIterateModeChange = { iterateMode = it },
                             onAiPromptChange = { aiPrompt = it },
+                            onAiModelChange = { aiModel = it },
                             onArrangeWithAi = runAiArrange,
+                            onResetRoom = {
+                                placementController.clearPlaced()
+                                placedCount = 0
+                                selectedModelName = null
+                                placementActive = false
+                                placementController.hideGhost()
+                                draftPlan = demoFloorPlan()
+                                appliedPlan = draftPlan.normalized()
+                                roomNavigationPosition = RoomNavigationPosition()
+                                selectedTextures = emptyMap()
+                                roomTextures = RoomTextures()
+                                applyRevision += 1
+                                status = "Room reset to default layout."
+                            },
                         )
                     }
                 }

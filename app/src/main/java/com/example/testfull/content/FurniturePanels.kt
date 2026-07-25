@@ -45,6 +45,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.testfull.BuildConfig
 import com.example.testfull.R
 import com.pico.spatial.ui.design.Button
 import com.pico.spatial.ui.design.ButtonDefaults
@@ -58,6 +59,22 @@ import java.io.File
 import com.pico.spatial.ui.platform.Material
 
 private const val MAX_LISTED_MODELS = 8
+
+/**
+ * AI models offered in the Arrange panel's model selector. Read from BuildConfig.AI_API_MODELS
+ * (a comma-separated list set in local.properties via ai.api.models) so the user can edit the
+ * list without code changes when the relay adds or removes a model. The label is the model id
+ * with the "gpt-" prefix stripped for a shorter chip.
+ */
+private val AI_MODEL_OPTIONS: List<Pair<String, String>> =
+    BuildConfig.AI_API_MODELS
+        .split(',')
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .map { id -> id to id.removePrefix("gpt-") }
+
+/** Max chips per row in the model selector — keeps chips readable in VR. */
+private const val AI_MODEL_CHIPS_PER_ROW = 4
 
 // Figma "AI Diagnosis Page--Reference" design tokens (accent switched to grey).
 private val AiAccent = Color(0xFF7C7C7C) // grey accent
@@ -731,13 +748,16 @@ internal fun AiArrangePanel(
     advancedThinking: Boolean,
     planMode: Boolean,
     iterateMode: Boolean,
+    aiModel: String,
     onAdvancedThinkingChange: (Boolean) -> Unit,
     onPlanModeChange: (Boolean) -> Unit,
     onIterateModeChange: (Boolean) -> Unit,
     onAiPromptChange: (String) -> Unit,
+    onAiModelChange: (String) -> Unit,
     onArrangeWithAi: () -> Unit,
+    onResetRoom: () -> Unit,
 ) {
-    PanelFrame(width = 420.dp, height = 480.dp) {
+    PanelFrame(width = 420.dp, height = 620.dp) {
         Text(
             text = "AI Arrange",
             style = PicoTheme.typography.displaySmall,
@@ -754,6 +774,39 @@ internal fun AiArrangePanel(
             color = AiHint,
         )
         Spacer(Modifier.height(8.dp))
+        // Model selector: lets the user pick a faster/smarter model at runtime. The list comes
+        // from BuildConfig.AI_API_MODELS (top 8 OpenAI performance models by BenchLM score).
+        // Chips wrap into rows of AI_MODEL_CHIPS_PER_ROW so 8 models fit in 2 rows in VR.
+        Text(
+            text = "Model (top 8 by benchmark)",
+            style = PicoTheme.typography.titleMedium,
+            fontSize = 12.sp,
+            color = AiHint,
+        )
+        Spacer(Modifier.height(4.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            AI_MODEL_OPTIONS.chunked(AI_MODEL_CHIPS_PER_ROW).forEach { rowModels ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    rowModels.forEach { (id, label) ->
+                        AiToggleChip(
+                            text = label,
+                            active = aiModel == id,
+                            enabled = roomAvailable && !aiBusy,
+                            onClick = { onAiModelChange(id) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    // Pad the last row so its chips don't stretch wider than the rows above.
+                    repeat(AI_MODEL_CHIPS_PER_ROW - rowModels.size) {
+                        Spacer(Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
         TextField(
             value = aiPrompt,
             onValueChange = onAiPromptChange,
@@ -764,6 +817,9 @@ internal fun AiArrangePanel(
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(6.dp))
+        // Preset prompts — each fills the prompt box with a tested starting point.
+        // Arranged in 2 rows of 3; the first row covers social/living functions,
+        // the second covers work/rest/studio functions.
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AiChip("Cozy", roomAvailable && !aiBusy) {
                 onAiPromptChange("Cozy living room for movie night")
@@ -771,8 +827,20 @@ internal fun AiArrangePanel(
             AiChip("Dining", roomAvailable && !aiBusy) {
                 onAiPromptChange("Dining setup for two")
             }
+            AiChip("Lounge", roomAvailable && !aiBusy) {
+                onAiPromptChange("Modern lounge with sofa, coffee table, accent chairs and rug")
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AiChip("Bedroom", roomAvailable && !aiBusy) {
                 onAiPromptChange("Study bedroom with a bed, a cabinet and a desk")
+            }
+            AiChip("Office", roomAvailable && !aiBusy) {
+                onAiPromptChange("Home office with desk, chair, bookshelf and storage cabinet")
+            }
+            AiChip("Studio", roomAvailable && !aiBusy) {
+                onAiPromptChange("Studio apartment with sleeping area, work desk, and lounge corner")
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -863,6 +931,12 @@ internal fun AiArrangePanel(
                 color = AiHint,
             )
         }
+        Spacer(Modifier.height(10.dp))
+        AiActionButton(
+            text = "Reset room",
+            enabled = roomAvailable && !aiBusy,
+            onClick = onResetRoom,
+        )
     }
 }
 

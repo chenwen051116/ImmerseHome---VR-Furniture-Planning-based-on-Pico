@@ -35,6 +35,14 @@ android {
         buildConfigField("String", "AI_API_BASE", localProp("ai.api.base", "https://api.openai-next.com/v1"))
         buildConfigField("String", "AI_API_KEY", localProp("ai.api.key", ""))
         buildConfigField("String", "AI_API_MODEL", localProp("ai.api.model", "gpt-4o-mini"))
+        // Comma-separated list of models offered in the Arrange panel's model selector.
+        // Default = top 8 OpenAI performance models by BenchLM composite score (July 2026),
+        // using the exact model ids verified against the api.openai-next.com /v1/models list:
+        // gpt-5.2-pro and gpt-5.3-codex are not on the relay, so we use gpt-5.2 and
+        // gpt-5.3-codex-spark (the relay's variants) instead.
+        // Edit ai.api.models in local.properties to match what the relay actually supports;
+        // the app rebuilds the chip row from this list at runtime.
+        buildConfigField("String", "AI_API_MODELS", localProp("ai.api.models", "gpt-5.6-sol,gpt-5.4,gpt-5.5,gpt-5.6-terra,gpt-5.6-luna,gpt-5.2,gpt-5.4-nano,gpt-5.3-codex-spark"))
     }
 
     buildTypes {

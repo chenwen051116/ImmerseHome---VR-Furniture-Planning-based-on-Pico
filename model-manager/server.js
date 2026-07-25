@@ -20,9 +20,11 @@ const TMP_DIR = path.join(__dirname, ".tmp");
 
 const ADB_CANDIDATES = [
     process.env.ADB,
-    "C:\\Users\\Taven\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe",
+    process.env.USERPROFILE &&
+        path.join(process.env.USERPROFILE, "AppData", "Local", "Android", "Sdk", "platform-tools", "adb.exe"),
     process.env.ANDROID_SDK_ROOT &&
         path.join(process.env.ANDROID_SDK_ROOT, "platform-tools", "adb.exe"),
+    "C:\\Users\\Acer\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe",
     "adb",
 ].filter(Boolean);
 
