@@ -1,9 +1,15 @@
 package com.example.testfull.content
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Typeface
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,18 +17,32 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.testfull.R
@@ -34,17 +54,144 @@ import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.design.Text
 import com.pico.spatial.ui.design.TextField
 import com.pico.spatial.ui.foundation.material.backgroundMaterial
+import java.io.File
 import com.pico.spatial.ui.platform.Material
 
 private const val MAX_LISTED_MODELS = 8
 
-// Figma "AI Diagnosis Page--Reference" design tokens.
-private val AiAccent = Color(0xFFF5B942) // warm yellow — "the light left on at home"
-private val AiAccentDisabled = Color(0x33F5B942)
+// Figma "AI Diagnosis Page--Reference" design tokens (accent switched to grey).
+private val AiAccent = Color(0xFF7C7C7C) // grey accent
+private val AiAccentDisabled = Color(0x337C7C7C)
 private val AiCardBg = Color(0xCCFFF6E6) // cream-white card surface
 private val AiHint = Color(0x995A4632) // warm grey-brown muted text
 private val AiGlassFill = Color(0x3DFFFFFF) // frosted glass pill fill
 private val AiGlassBorder = Color(0x33FFFFFF) // 1px semi-transparent border
+
+// Figma "Select Furniture" design tokens.
+private val FurPrimaryText = Color(0xFF3C2015) // dark brown labels on light surfaces
+private val FurCardTitle = Color(0xFFFFFFFF) // white card titles on glass (Figma spec)
+private val FurHint = Color(0xCCFFFFFF) // muted white hint text
+private val FurCardBg = Color(0xCCFFF6E6) // cream-white preview card (legacy solid)
+private val FurPreviewGradientStart = Color(0xFFF8E3CA) // cream (Figma G85 gradient)
+private val FurPreviewGradientEnd = Color(0xFFF6AD88) // peach (Figma G85 gradient)
+private val FurAlertBg = Color(0xFFF6BFA9) // warm peach alert bar (Figma spec)
+
+/** Derives a furniture category from the model file name via keyword matching. */
+private fun categorizeModel(name: String): String {
+    val lower = name.lowercase()
+    return when {
+        "sofa" in lower || "couch" in lower -> "Sofa"
+        "chair" in lower || "stool" in lower || "seat" in lower -> "Chair"
+        "table" in lower || "desk" in lower -> "Table"
+        "bed" in lower -> "Bed"
+        "cabinet" in lower || "shelf" in lower || "storage" in lower || "wardrobe" in lower -> "Storage"
+        "lamp" in lower || "light" in lower -> "Lighting"
+        "rug" in lower || "carpet" in lower -> "Rug"
+        "plant" in lower || "flower" in lower -> "Plant"
+        else -> "Other"
+    }
+}
+
+/** Frosted-glass pill chip with selected state, for furniture category tabs. Figma radius 4.63dp. */
+@Composable
+private fun CategoryChip(text: String, selected: Boolean, onClick: () -> Unit) {
+    val bg = if (selected) Color(0x66FFFFFF) else AiGlassFill
+    val textColor = if (selected) Color.White else Color(0xFFEEEEEE)
+    Box(
+        modifier =
+            Modifier
+                .clip(RoundedCornerShape(5.dp))
+                .background(bg)
+                .border(1.dp, AiGlassBorder, RoundedCornerShape(5.dp))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = PicoTheme.typography.titleMedium,
+            fontSize = 13.sp,
+            color = textColor,
+        )
+    }
+}
+
+/**
+ * Loads a preview image for a furniture model. Tries in order:
+ * 1. Drawable resource based on category (bundled in APK, always accessible)
+ * 2. Model-specific sidecar (`<name>.png` or `<name>.jpg` next to the .glb)
+ * 3. Category-level image (`Sofa.png`, `Chair.png`, etc. in the same folder)
+ * Returns null when none exist, falling back to a generated thumbnail.
+ */
+@Composable
+private fun loadModelPreview(modelFile: File): ImageBitmap? {
+    val context = LocalContext.current
+    return remember(modelFile) {
+        runCatching {
+            val category = categorizeModel(modelFile.name)
+            // 1. Try drawable resource (always accessible, no permission issues)
+            val resId = when (category) {
+                "Sofa" -> R.drawable.furniture_sofa
+                "Chair" -> R.drawable.furniture_chair
+                "Table" -> R.drawable.furniture_table
+                else -> 0
+            }
+            if (resId != 0) {
+                val bmp = BitmapFactory.decodeResource(context.resources, resId)
+                return@runCatching bmp?.asImageBitmap()
+            }
+            // 2. Try model-specific filesystem image
+            val dir = modelFile.parentFile
+            val baseName = modelFile.nameWithoutExtension
+            val pngFile = File(dir, "$baseName.png")
+            val jpgFile = File(dir, "$baseName.jpg")
+            val catPng = File(dir, "$category.png")
+            val imageFile = when {
+                pngFile.isFile -> pngFile
+                jpgFile.isFile -> jpgFile
+                catPng.isFile -> catPng
+                else -> return@runCatching null
+            }
+            imageFile.inputStream().use { stream ->
+                BitmapFactory.decodeStream(stream)?.asImageBitmap()
+            }
+        }.getOrNull()
+    }
+}
+
+/** Category-specific background colors for generated thumbnails. */
+private val categoryColors = mapOf(
+    "Sofa" to 0xFFE89060.toInt(),
+    "Chair" to 0xFF5B8DEF.toInt(),
+    "Table" to 0xFF5BAE7A.toInt(),
+    "Bed" to 0xFF9B7EDC.toInt(),
+    "Storage" to 0xFF8B6F47.toInt(),
+    "Lighting" to 0xFFF5B942.toInt(),
+    "Rug" to 0xFF4DB6AC.toInt(),
+    "Plant" to 0xFF2E7D32.toInt(),
+    "Other" to 0xFF7C7C7C.toInt(),
+)
+
+/** Generates a colored thumbnail with the category name when no sidecar .png exists. */
+@Composable
+private fun generateCategoryThumbnail(category: String): ImageBitmap =
+    remember(category) {
+        val width = 300
+        val height = 180
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        canvas.drawColor(categoryColors[category] ?: 0xFF7C7C7C.toInt())
+        val paint =
+            Paint().apply {
+                color = 0xFFFFFFFF.toInt()
+                textSize = 42f
+                typeface = Typeface.DEFAULT_BOLD
+                textAlign = Paint.Align.CENTER
+                isAntiAlias = true
+            }
+        canvas.drawText(category, width / 2f, height / 2f + 14f, paint)
+        bitmap.asImageBitmap()
+    }
 
 private fun formatFileSize(bytes: Long): String =
     when {
@@ -58,6 +205,7 @@ private fun PanelFrame(
     width: androidx.compose.ui.unit.Dp,
     height: androidx.compose.ui.unit.Dp,
     debugTint: Color? = null,
+    transparent: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     Column(
@@ -65,7 +213,13 @@ private fun PanelFrame(
             Modifier.width(width)
                 .height(height)
                 .clip(RoundedCornerShape(20.dp))
-                .backgroundMaterial(true, Material.Regular)
+                .then(
+                    if (transparent) {
+                        Modifier.background(Color(0x3DFFFFFF))
+                    } else {
+                        Modifier.backgroundMaterial(true, Material.Regular)
+                    }
+                )
                 .then(
                     if (debugTint != null) {
                         Modifier.background(debugTint)
@@ -143,10 +297,43 @@ internal fun FurnitureLibraryPanel(
     onModelScaleChange: (Float) -> Unit,
     onClearPlaced: () -> Unit,
 ) {
-    PanelFrame(width = 300.dp, height = 430.dp) {
-        PanelTitle("Furniture")
+    // Group models into categories derived from file names.
+    val categorized =
+        remember(availableModels) {
+            availableModels.groupBy { categorizeModel(it.displayName) }.toSortedMap()
+        }
+    val categories = categorized.keys.toList()
+    var selectedCategory by remember { mutableStateOf<String?>(null) }
+    val activeCategory =
+        if (selectedCategory != null && selectedCategory in categories) {
+            selectedCategory
+        } else {
+            categories.firstOrNull()
+        }
+    val safeModels = if (activeCategory != null) categorized[activeCategory] ?: emptyList() else emptyList()
+    var currentIndex by remember(activeCategory) { mutableStateOf(0) }
+    val safeIndex =
+        if (safeModels.isEmpty()) {
+            0
+        } else {
+            currentIndex.coerceIn(0, safeModels.lastIndex)
+        }
+    val currentModel = safeModels.getOrNull(safeIndex)
+
+    PanelFrame(width = 420.dp, height = 550.dp) {
+        Text(
+            text = "Furniture Library",
+            style = PicoTheme.typography.displaySmall,
+            fontSize = 21.sp,
+            color = Color.White,
+        )
         Spacer(Modifier.height(6.dp))
-        PanelHint("Push .glb files to the app's files/models folder, then scan. Tap one to start placing it.")
+        Text(
+            text = "Push .glb files to the app's files/models folder, then scan.",
+            style = PicoTheme.typography.titleMedium,
+            fontSize = 13.sp,
+            color = FurHint,
+        )
         Spacer(Modifier.height(8.dp))
         Button(
             onClick = onScanModels,
@@ -161,47 +348,270 @@ internal fun FurnitureLibraryPanel(
                 }
             )
         }
-        Spacer(Modifier.height(8.dp))
-        availableModels.take(MAX_LISTED_MODELS).forEach { model ->
-            EnvironmentButton(
-                label = "${model.displayName} · ${formatFileSize(model.file.length())}",
-                selected = model.displayName == selectedModelName,
-                enabled = roomAvailable,
-                onClick = { onModelSelected(model) },
+
+        if (availableModels.isEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = "No models found yet. Push .glb files and scan.",
+                style = PicoTheme.typography.titleMedium,
+                fontSize = 13.sp,
+                color = FurHint,
+            )
+        } else {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = "Categories",
+                style = PicoTheme.typography.titleMedium,
+                fontSize = 14.sp,
+                color = FurCardTitle,
             )
             Spacer(Modifier.height(6.dp))
-        }
-        if (availableModels.size > MAX_LISTED_MODELS) {
-            PanelHint("…and ${availableModels.size - MAX_LISTED_MODELS} more (first $MAX_LISTED_MODELS shown)")
-            Spacer(Modifier.height(6.dp))
-        }
-        if (selectedModelName != null) {
-            Spacer(Modifier.height(4.dp))
-            DimensionField(
-                label = "Model scale",
-                value = modelScale * 100f,
-                step = 25f,
-                range = 5f..500f,
-                unit = "%",
-                fractionDigits = 0,
-                onChange = { value -> onModelScaleChange(value / 100f) },
-            )
-            Spacer(Modifier.height(8.dp))
-            Button(
-                onClick = onClearPlaced,
-                enabled = placedCount > 0,
-                size = ButtonDefaults.Small,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Clear placed ($placedCount)")
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                categories.forEach { cat ->
+                    CategoryChip(
+                        text = cat,
+                        selected = cat == activeCategory,
+                        onClick = { selectedCategory = cat },
+                    )
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+
+            if (currentModel != null) {
+                // Determine if this category has a bundled drawable preview
+                val modelCategory = categorizeModel(currentModel.file.name)
+                val drawableResId = when (modelCategory) {
+                    "Sofa" -> R.drawable.furniture_sofa
+                    "Chair" -> R.drawable.furniture_chair
+                    "Table" -> R.drawable.furniture_table
+                    else -> 0
+                }
+                // Preview card — Figma G85: gradient #F8E3CA -> #F6AD88, radius 23dp
+                Box(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(23.dp))
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(FurPreviewGradientStart, FurPreviewGradientEnd),
+                                ),
+                            )
+                            .padding(12.dp),
+                ) {
+                    Column {
+                        // Image preview: drawable resource (painterResource) or generated thumbnail
+                        if (drawableResId != 0) {
+                            Image(
+                                painter = painterResource(id = drawableResId),
+                                contentDescription = currentModel.displayName,
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .height(100.dp)
+                                        .clip(RoundedCornerShape(10.dp)),
+                                contentScale = ContentScale.Crop,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                        } else {
+                            val thumbnail =
+                                generateCategoryThumbnail(modelCategory)
+                            Image(
+                                bitmap = thumbnail,
+                                contentDescription = modelCategory,
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .height(100.dp)
+                                        .clip(RoundedCornerShape(10.dp)),
+                                contentScale = ContentScale.Crop,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        Text(
+                            text = currentModel.displayName,
+                            style = PicoTheme.typography.displaySmall,
+                            fontSize = 17.sp,
+                            color = FurCardTitle,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "${formatFileSize(currentModel.file.length())} · $activeCategory",
+                            style = PicoTheme.typography.titleMedium,
+                            fontSize = 13.sp,
+                            color = FurPrimaryText,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+
+                // Left / right navigation + position indicator
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Button(
+                        onClick = {
+                            if (safeModels.size > 1) {
+                                currentIndex =
+                                    (safeIndex - 1 + safeModels.size) % safeModels.size
+                            }
+                        },
+                        enabled = safeModels.size > 1,
+                        size = ButtonDefaults.Small,
+                        modifier = Modifier.width(50.dp),
+                    ) {
+                        Text("‹")
+                    }
+                    Text(
+                        text = "${safeIndex + 1} / ${safeModels.size}",
+                        style = PicoTheme.typography.titleMedium,
+                        fontSize = 14.sp,
+                        color = Color.White,
+                    )
+                    Button(
+                        onClick = {
+                            if (safeModels.size > 1) {
+                                currentIndex = (safeIndex + 1) % safeModels.size
+                            }
+                        },
+                        enabled = safeModels.size > 1,
+                        size = ButtonDefaults.Small,
+                        modifier = Modifier.width(50.dp),
+                    ) {
+                        Text("›")
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+
+                // Alert bar
+                Box(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(FurAlertBg)
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                ) {
+                    Text(
+                        text = "Select furniture, then drag it to the left space.",
+                        style = PicoTheme.typography.titleMedium,
+                        fontSize = 13.sp,
+                        color = FurPrimaryText,
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+
+                // Confirm selection
+                Button(
+                    onClick = { onModelSelected(currentModel) },
+                    enabled = roomAvailable,
+                    size = ButtonDefaults.Small,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Confirm selection")
+                }
+            }
+
+            if (selectedModelName != null) {
+                Spacer(Modifier.height(8.dp))
+                DimensionField(
+                    label = "Model scale",
+                    value = modelScale * 100f,
+                    step = 25f,
+                    range = 5f..500f,
+                    unit = "%",
+                    fractionDigits = 0,
+                    onChange = { value -> onModelScaleChange(value / 100f) },
+                )
+                Spacer(Modifier.height(6.dp))
+                Button(
+                    onClick = onClearPlaced,
+                    enabled = placedCount > 0,
+                    size = ButtonDefaults.Small,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Clear placed ($placedCount)")
+                }
             }
         }
     }
 }
 
 /**
+ * Draggable rotation slider (0–360°). Touch and drag anywhere on the track to rotate the
+ * furniture ghost in real-time. Styled with Figma glassmorphism tokens.
+ */
+@Composable
+private fun RotationSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var trackWidthPx by remember { mutableStateOf(0f) }
+    val progress = (value / 360f).coerceIn(0f, 1f)
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .onSizeChanged { trackWidthPx = it.width.toFloat() }
+            .pointerInput(Unit) {
+                detectDragGestures(
+                    onDragStart = { offset ->
+                        if (trackWidthPx > 0f) {
+                            val fraction = (offset.x / trackWidthPx).coerceIn(0f, 1f)
+                            onValueChange(fraction * 360f)
+                        }
+                    },
+                ) { change, _ ->
+                    change.consume()
+                    if (trackWidthPx > 0f) {
+                        val fraction = (change.position.x / trackWidthPx).coerceIn(0f, 1f)
+                        onValueChange(fraction * 360f)
+                    }
+                }
+            },
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        // Track background
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(AiGlassFill),
+        )
+        // Progress fill
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(progress)
+                .height(6.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(Color.White),
+        )
+        // Thumb
+        if (trackWidthPx > 0f) {
+            Box(
+                modifier = Modifier
+                    .offset {
+                        val thumbX = (progress * trackWidthPx - 12f)
+                            .coerceIn(0f, (trackWidthPx - 24f).coerceAtLeast(0f))
+                        IntOffset(thumbX.toInt(), 0)
+                    }
+                    .size(24.dp)
+                    .clip(CircleShape)
+                    .background(Color.White),
+            )
+        }
+    }
+}
+
+/**
  * Placement HUD: follows the user's view (positioned by HomeStage). Shows what is being
- * placed, the aim status, and the drop control — always within reach while aiming.
+ * placed, rotation control, and drop/undo/delete actions — always within reach while aiming.
+ * Styled with Figma "Select Furniture" glassmorphism tokens.
  */
 @Composable
 internal fun PlacementHudPanel(
@@ -210,50 +620,98 @@ internal fun PlacementHudPanel(
     placedCount: Int,
     aimStatus: String,
     roomAvailable: Boolean,
+    rotationDegrees: Float,
     onPlacementActiveChange: (Boolean) -> Unit,
     onDropNow: () -> Unit,
     onClearPlaced: () -> Unit,
+    onRotationChange: (Float) -> Unit,
+    onUndo: () -> Unit,
 ) {
-    PanelFrame(width = 300.dp, height = 250.dp) {
-        PanelTitle(if (selectedModelName != null) "Placing: $selectedModelName" else "Placing")
-        Spacer(Modifier.height(8.dp))
-        Button(
-            onClick = { onPlacementActiveChange(!placementActive) },
-            enabled = roomAvailable && selectedModelName != null,
-            size = ButtonDefaults.Small,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(if (placementActive) "Placing: ON — stop" else "Placing: OFF — start")
-        }
-        if (placementActive) {
-            Spacer(Modifier.height(6.dp))
-            PanelHint(aimStatus)
-            Spacer(Modifier.height(8.dp))
+    PanelFrame(width = 340.dp, height = 460.dp, transparent = true) {
+        Text(
+            text = selectedModelName ?: "Place Furniture",
+            style = PicoTheme.typography.displaySmall,
+            fontSize = 20.sp,
+            color = FurCardTitle,
+        )
+        Spacer(Modifier.height(6.dp))
+
+        if (selectedModelName != null) {
+            // Rotation slider — drag to rotate the ghost in real-time.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Rotation",
+                    style = PicoTheme.typography.titleMedium,
+                    fontSize = 13.sp,
+                    color = FurHint,
+                )
+                Text(
+                    text = "${rotationDegrees.toInt()}°",
+                    style = PicoTheme.typography.titleMedium,
+                    fontSize = 13.sp,
+                    color = Color.White,
+                )
+            }
+            RotationSlider(
+                value = rotationDegrees,
+                onValueChange = onRotationChange,
+            )
+            Spacer(Modifier.height(10.dp))
+
+            // Drop — the primary action, full width.
             Button(
                 onClick = onDropNow,
-                enabled = roomAvailable,
+                enabled = placementActive && roomAvailable,
                 size = ButtonDefaults.Max,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("Drop at ghost")
+                Text("Drop here")
             }
+            Spacer(Modifier.height(8.dp))
+
+            // Undo + Delete side by side.
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onUndo,
+                    enabled = placedCount > 0,
+                    size = ButtonDefaults.Small,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Undo")
+                }
+                Button(
+                    onClick = onClearPlaced,
+                    enabled = placedCount > 0,
+                    size = ButtonDefaults.Small,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Delete all")
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+
+            // Done — stop placing and reopen the main panel.
+            Button(
+                onClick = { onPlacementActiveChange(false) },
+                size = ButtonDefaults.Small,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Done ($placedCount placed)")
+            }
+            Spacer(Modifier.height(8.dp))
+            PanelHint(aimStatus)
             Spacer(Modifier.height(6.dp))
             PanelHint(
-                "Aim with the controller or your view — the ghost shows the real-size resting " +
-                    "pose and slides aside to avoid overlaps. Red = no free space."
+                "Aim with the controller or your view. Use rotation to face the furniture " +
+                    "the right way. Red ghost = no free space.",
             )
         } else {
             Spacer(Modifier.height(6.dp))
-            PanelHint("Pick a model in the Furniture panel, then start placing.")
-        }
-        Spacer(Modifier.height(8.dp))
-        Button(
-            onClick = onClearPlaced,
-            enabled = placedCount > 0,
-            size = ButtonDefaults.Small,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("Clear placed ($placedCount)")
+            PanelHint("Select furniture from the library to start placing.")
         }
     }
 }
@@ -272,12 +730,12 @@ internal fun AiArrangePanel(
     onTextureSlotChange: (SurfaceSlot, String?) -> Unit,
     onApplyTextures: () -> Unit,
 ) {
-    PanelFrame(width = 320.dp, height = 470.dp) {
+    PanelFrame(width = 420.dp, height = 550.dp) {
         Text(
             text = "AI Arrange",
             style = PicoTheme.typography.displaySmall,
             fontSize = 21.sp,
-            color = AiAccent,
+            color = Color.White,
         )
         Spacer(Modifier.height(6.dp))
         Text(
@@ -405,7 +863,7 @@ private fun AiChip(text: String, enabled: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** Warm-yellow accent action button for primary AI panel actions. */
+/** Grey accent action button for primary AI panel actions. */
 @Composable
 private fun AiActionButton(text: String, enabled: Boolean, onClick: () -> Unit) {
     Box(
@@ -422,7 +880,7 @@ private fun AiActionButton(text: String, enabled: Boolean, onClick: () -> Unit) 
             text = text,
             style = PicoTheme.typography.titleMedium,
             fontSize = 16.sp,
-            color = Color(0xFF3C2015),
+            color = Color.White,
         )
     }
 }
