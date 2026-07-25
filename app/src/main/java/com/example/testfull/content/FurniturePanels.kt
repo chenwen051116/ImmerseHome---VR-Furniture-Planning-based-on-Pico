@@ -14,15 +14,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,38 +36,15 @@ import com.pico.spatial.ui.design.TextField
 import com.pico.spatial.ui.foundation.material.backgroundMaterial
 import com.pico.spatial.ui.platform.Material
 
-// Figma "AI Diagnosis Page--Reference" design tokens (accent switched to grey).
-private val AiAccent = Color(0xFF7C7C7C) // grey accent
-private val AiAccentDisabled = Color(0x337C7C7C)
+private const val MAX_LISTED_MODELS = 8
+
+// Figma "AI Diagnosis Page--Reference" design tokens.
+private val AiAccent = Color(0xFFF5B942) // warm yellow — "the light left on at home"
+private val AiAccentDisabled = Color(0x33F5B942)
 private val AiCardBg = Color(0xCCFFF6E6) // cream-white card surface
 private val AiHint = Color(0x995A4632) // warm grey-brown muted text
 private val AiGlassFill = Color(0x3DFFFFFF) // frosted glass pill fill
 private val AiGlassBorder = Color(0x33FFFFFF) // 1px semi-transparent border
-
-// Figma "Select Furniture" design tokens.
-private val FurPrimaryText = Color(0xFF3C2015) // dark brown labels
-private val FurGlassText = Color(0xFFEEEEEE) // button text on glass
-private val FurGlassFill = Color(0x3DFFFFFF) // frosted glass pill fill
-private val FurGlassActive = Color(0x66FFFFFF) // selected pill fill
-private val FurHint = Color(0xCCFFFFFF) // muted white hint text
-private val FurCardBg = Color(0xCCFFF6E6) // cream-white preview card
-private val FurAlertBg = Color(0xFFF6BFA9) // warm pink alert bar
-
-/** Derives a furniture category from the model file name via keyword matching. */
-private fun categorizeModel(name: String): String {
-    val lower = name.lowercase()
-    return when {
-        "sofa" in lower || "couch" in lower -> "Sofa"
-        "chair" in lower || "stool" in lower || "seat" in lower -> "Chair"
-        "table" in lower || "desk" in lower -> "Table"
-        "bed" in lower -> "Bed"
-        "cabinet" in lower || "shelf" in lower || "storage" in lower || "wardrobe" in lower -> "Storage"
-        "lamp" in lower || "light" in lower -> "Lighting"
-        "rug" in lower || "carpet" in lower -> "Rug"
-        "plant" in lower || "flower" in lower -> "Plant"
-        else -> "Other"
-    }
-}
 
 private fun formatFileSize(bytes: Long): String =
     when {
@@ -171,212 +143,57 @@ internal fun FurnitureLibraryPanel(
     onModelScaleChange: (Float) -> Unit,
     onClearPlaced: () -> Unit,
 ) {
-    // Group models into categories derived from file names.
-    val categorized =
-        remember(availableModels) {
-            availableModels.groupBy { categorizeModel(it.displayName) }.toSortedMap()
-        }
-    val categories = categorized.keys.toList()
-    var selectedCategory by remember { mutableStateOf<String?>(null) }
-    val activeCategory = if (selectedCategory in categories) selectedCategory else categories.firstOrNull()
-    val modelsInCategory = categorized[activeCategory] ?: emptyList()
-    var currentIndex by remember(activeCategory) { mutableStateOf(0) }
-    val currentModel =
-        if (modelsInCategory.isEmpty()) {
-            null
-        } else {
-            modelsInCategory[currentIndex.coerceIn(0, modelsInCategory.lastIndex)]
-        }
-
-    PanelFrame(width = 320.dp, height = 560.dp) {
-        Text(
-            text = "Furniture Library",
-            style = PicoTheme.typography.displaySmall,
-            fontSize = 22.sp,
-            color = Color.White,
-        )
+    PanelFrame(width = 300.dp, height = 430.dp) {
+        PanelTitle("Furniture")
         Spacer(Modifier.height(6.dp))
-        Text(
-            text = "Push .glb files to the app's files/models folder, then scan.",
-            style = PicoTheme.typography.titleMedium,
-            fontSize = 13.sp,
-            color = FurHint,
-        )
+        PanelHint("Push .glb files to the app's files/models folder, then scan. Tap one to start placing it.")
         Spacer(Modifier.height(8.dp))
-        Box(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(FurGlassFill)
-                    .clickable(onClick = onScanModels)
-                    .padding(horizontal = 20.dp, vertical = 10.dp),
-            contentAlignment = Alignment.Center,
+        Button(
+            onClick = onScanModels,
+            size = ButtonDefaults.Small,
+            modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
-                text =
-                    if (availableModels.isEmpty()) {
-                        "Scan models folder"
-                    } else {
-                        "Rescan (${availableModels.size} found)"
-                    },
-                style = PicoTheme.typography.titleMedium,
-                fontSize = 14.sp,
-                color = FurGlassText,
+                if (availableModels.isEmpty()) {
+                    "Scan models folder"
+                } else {
+                    "Rescan (${availableModels.size} found)"
+                }
             )
         }
-
-        if (availableModels.isEmpty()) {
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = "No models found yet. Push .glb files and scan.",
-                style = PicoTheme.typography.titleMedium,
-                fontSize = 13.sp,
-                color = FurHint,
-            )
-        } else {
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = "Categories",
-                style = PicoTheme.typography.titleMedium,
-                fontSize = 14.sp,
-                color = FurPrimaryText,
+        Spacer(Modifier.height(8.dp))
+        availableModels.take(MAX_LISTED_MODELS).forEach { model ->
+            EnvironmentButton(
+                label = "${model.displayName} · ${formatFileSize(model.file.length())}",
+                selected = model.displayName == selectedModelName,
+                enabled = roomAvailable,
+                onClick = { onModelSelected(model) },
             )
             Spacer(Modifier.height(6.dp))
-            Row(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+        }
+        if (availableModels.size > MAX_LISTED_MODELS) {
+            PanelHint("…and ${availableModels.size - MAX_LISTED_MODELS} more (first $MAX_LISTED_MODELS shown)")
+            Spacer(Modifier.height(6.dp))
+        }
+        if (selectedModelName != null) {
+            Spacer(Modifier.height(4.dp))
+            DimensionField(
+                label = "Model scale",
+                value = modelScale * 100f,
+                step = 25f,
+                range = 5f..500f,
+                unit = "%",
+                fractionDigits = 0,
+                onChange = { value -> onModelScaleChange(value / 100f) },
+            )
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = onClearPlaced,
+                enabled = placedCount > 0,
+                size = ButtonDefaults.Small,
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                categories.forEach { cat ->
-                    GlassChip(
-                        text = cat,
-                        selected = cat == activeCategory,
-                        onClick = { selectedCategory = cat },
-                    )
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-
-            if (currentModel != null) {
-                // Preview card
-                Box(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(FurCardBg)
-                            .padding(14.dp),
-                ) {
-                    Column {
-                        Text(
-                            text = currentModel.displayName,
-                            style = PicoTheme.typography.displaySmall,
-                            fontSize = 17.sp,
-                            color = FurPrimaryText,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = "${formatFileSize(currentModel.file.length())} · $activeCategory",
-                            style = PicoTheme.typography.titleMedium,
-                            fontSize = 13.sp,
-                            color = FurHint,
-                        )
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-
-                // Left / right navigation + position indicator
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    GlassChip("‹", enabled = modelsInCategory.size > 1) {
-                        currentIndex =
-                            (currentIndex - 1 + modelsInCategory.size) % modelsInCategory.size
-                    }
-                    Text(
-                        text = "${currentIndex + 1} / ${modelsInCategory.size}",
-                        style = PicoTheme.typography.titleMedium,
-                        fontSize = 14.sp,
-                        color = Color.White,
-                    )
-                    GlassChip("›", enabled = modelsInCategory.size > 1) {
-                        currentIndex = (currentIndex + 1) % modelsInCategory.size
-                    }
-                }
-                Spacer(Modifier.height(10.dp))
-
-                // Alert bar
-                Box(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(FurAlertBg)
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
-                ) {
-                    Text(
-                        text = "Select furniture, then drag it into the room.",
-                        style = PicoTheme.typography.titleMedium,
-                        fontSize = 13.sp,
-                        color = FurPrimaryText,
-                    )
-                }
-                Spacer(Modifier.height(10.dp))
-
-                // Confirm selection
-                Box(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(if (roomAvailable) FurGlassActive else Color(0x1AFFFFFF))
-                            .clickable(enabled = roomAvailable) { onModelSelected(currentModel) }
-                            .padding(horizontal = 20.dp, vertical = 12.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = "Confirm selection",
-                        style = PicoTheme.typography.titleMedium,
-                        fontSize = 16.sp,
-                        color = Color.White,
-                    )
-                }
-            }
-
-            if (selectedModelName != null) {
-                Spacer(Modifier.height(12.dp))
-                DimensionField(
-                    label = "Model scale",
-                    value = modelScale * 100f,
-                    step = 25f,
-                    range = 5f..500f,
-                    unit = "%",
-                    fractionDigits = 0,
-                    onChange = { value -> onModelScaleChange(value / 100f) },
-                )
-                Spacer(Modifier.height(8.dp))
-                Box(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(FurGlassFill)
-                            .clickable(enabled = placedCount > 0, onClick = onClearPlaced)
-                            .padding(horizontal = 20.dp, vertical = 10.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = "Clear placed ($placedCount)",
-                        style = PicoTheme.typography.titleMedium,
-                        fontSize = 14.sp,
-                        color = FurGlassText,
-                    )
-                }
+                Text("Clear placed ($placedCount)")
             }
         }
     }
@@ -460,7 +277,7 @@ internal fun AiArrangePanel(
             text = "AI Arrange",
             style = PicoTheme.typography.displaySmall,
             fontSize = 21.sp,
-            color = Color.White,
+            color = AiAccent,
         )
         Spacer(Modifier.height(6.dp))
         Text(
@@ -483,13 +300,13 @@ internal fun AiArrangePanel(
         )
         Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            GlassChip("Cozy", enabled = roomAvailable && !aiBusy) {
+            AiChip("Cozy", roomAvailable && !aiBusy) {
                 onAiPromptChange("Cozy living room for movie night")
             }
-            GlassChip("Dining", enabled = roomAvailable && !aiBusy) {
+            AiChip("Dining", roomAvailable && !aiBusy) {
                 onAiPromptChange("Dining setup for two")
             }
-            GlassChip("Bedroom", enabled = roomAvailable && !aiBusy) {
+            AiChip("Bedroom", roomAvailable && !aiBusy) {
                 onAiPromptChange("Study bedroom with a bed, a cabinet and a desk")
             }
         }
@@ -566,31 +383,24 @@ internal fun AiArrangePanel(
     }
 }
 
-/** Frosted-glass pill chip with optional selected state (AI presets, furniture categories). */
+/** Frosted-glass pill chip for AI preset prompts. */
 @Composable
-private fun GlassChip(
-    text: String,
-    selected: Boolean = false,
-    enabled: Boolean = true,
-    onClick: () -> Unit,
-) {
-    val bg = if (!enabled) Color(0x1AFFFFFF) else if (selected) FurGlassActive else FurGlassFill
-    val textColor = if (!enabled) Color(0x66EEEEEE) else if (selected) Color.White else FurGlassText
+private fun AiChip(text: String, enabled: Boolean, onClick: () -> Unit) {
     Box(
         modifier =
             Modifier
                 .clip(RoundedCornerShape(8.dp))
-                .background(bg)
+                .background(if (enabled) AiGlassFill else Color(0x1AFFFFFF))
                 .border(1.dp, AiGlassBorder, RoundedCornerShape(8.dp))
                 .clickable(enabled = enabled, onClick = onClick)
-                .padding(horizontal = 14.dp, vertical = 8.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = text,
             style = PicoTheme.typography.titleMedium,
-            fontSize = 13.sp,
-            color = textColor,
+            fontSize = 14.sp,
+            color = if (enabled) Color(0xFFEEEEEE) else Color(0x66EEEEEE),
         )
     }
 }
@@ -612,7 +422,7 @@ private fun AiActionButton(text: String, enabled: Boolean, onClick: () -> Unit) 
             text = text,
             style = PicoTheme.typography.titleMedium,
             fontSize = 16.sp,
-            color = Color.White,
+            color = Color(0xFF3C2015),
         )
     }
 }
